@@ -14,10 +14,13 @@ use sputnikdao2::{
     Action, Config, ContractContract as DAOContract, ProposalInput, ProposalKind, VersionedPolicy,
 };
 use test_token::ContractContract as TestTokenContract;
+use test_nft::ContractContract as TestNFTContract;
+
 
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
     DAO_WASM_BYTES => "res/sputnikdao2.wasm",
     TEST_TOKEN_WASM_BYTES => "../test-token/res/test_token.wasm",
+    TEST_NFT_WASM_BYTES => "../test-nft/res/test_nft.wasm",
     STAKING_WASM_BYTES => "../sputnik-staking/res/sputnik_staking.wasm",
 }
 
@@ -63,6 +66,17 @@ pub fn setup_test_token(root: &UserAccount) -> ContractAccount<TestTokenContract
     )
 }
 
+pub fn setup_test_nft(root: &UserAccount) -> ContractAccount<TestNFTContract> {
+    deploy!(
+        contract: TestNFTContract,
+        contract_id: "test_nft".to_string(),
+        bytes: &TEST_NFT_WASM_BYTES,
+        signer_account: root,
+        deposit: to_yocto("200"),
+        init_method: new_default_meta(root.account_id())
+    )
+}
+
 pub fn setup_staking(root: &UserAccount) -> ContractAccount<StakingContract> {
     deploy!(
         contract: StakingContract,
@@ -71,6 +85,17 @@ pub fn setup_staking(root: &UserAccount) -> ContractAccount<StakingContract> {
         signer_account: root,
         deposit: to_yocto("100"),
         init_method: new("dao".parse().unwrap(), "test_token".to_string(), U64(100_000_000_000))
+    )
+}
+
+pub fn setup_staking_nft(root: &UserAccount) -> ContractAccount<StakingContract> {
+    deploy!(
+        contract: StakingContract,
+        contract_id: "staking".to_string(),
+        bytes: &STAKING_WASM_BYTES,
+        signer_account: root,
+        deposit: to_yocto("100"),
+        init_method: new("dao".parse().unwrap(), "test_nft".to_string(), U64(100_000_000_000))
     )
 }
 

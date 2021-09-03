@@ -6,7 +6,8 @@ members = [
   "sputnikdao2",
   "sputnikdao-factory",
   "sputnikdao-factory2",
-  "test-token"
+  "test-token",
+  "test-nft"
 ]
 
 [profile.release]
