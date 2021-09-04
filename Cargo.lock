@@ -2524,6 +2524,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sputnik-nft-staking"
+version = "1.0.0"
+dependencies = [
+ "hex",
+ "near-contract-standards",
+ "near-sdk",
+ "near-sdk-sim",
+ "test-token",
+]
+
+[[package]]
 name = "sputnik-staking"
 version = "1.0.0"
 dependencies = [

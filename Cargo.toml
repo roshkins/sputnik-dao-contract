@@ -2,6 +2,7 @@
 # include a member for each contract
 members = [
   "sputnik-staking",
+  "sputnik-nft-staking",
   "sputnikdao",
   "sputnikdao2",
   "sputnikdao-factory",
