@@ -1,0 +1,18 @@
+[package]
+name = "sputnik-nft-staking"
+version = "1.0.0"
+authors = ["Sputnik Devs <near-daos@protonmail.com>"]
+edition = "2018"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = "4.0.0-pre.2"
+near-contract-standards = "4.0.0-pre.2"
+hex = "0.4.2"
+
+[dev-dependencies]
+near-sdk-sim = "4.0.0-pre.2"
+test-token = { path = "../test-token" }
