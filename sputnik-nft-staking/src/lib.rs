@@ -1,5 +1,5 @@
 use near_contract_standards::fungible_token::core_impl::ext_fungible_token;
-use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
+use near_contract_standards::non_fungible_token::core::NonFungibleTokenReceiver;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, UnorderedMap, UnorderedSet};
 use near_sdk::json_types::{U128, U64};
@@ -155,21 +155,23 @@ impl Contract {
 }
 
 #[near_bindgen]
-impl FungibleTokenReceiver for Contract {
-    fn ft_on_transfer(
+impl NonFungibleTokenReceiver for Contract {
+    fn nft_on_transfer(
         &mut self,
         sender_id: AccountId,
-        amount: U128,
+        previous_owner_id: AccountId,
+        token_id: near_contract_standards::non_fungible_token::TokenId,
         msg: String,
-    ) -> PromiseOrValue<U128> {
+    ) -> PromiseOrValue<bool> {
         assert_eq!(
             self.vote_token_id,
             env::predecessor_account_id(),
             "ERR_INVALID_TOKEN"
         );
         assert!(msg.is_empty(), "ERR_INVALID_MESSAGE");
-        self.internal_deposit(&sender_id, amount.0);
-        PromiseOrValue::Value(U128(0))
+        //TODO: Weight vote token amount by NFT, right now 1 NFT = 1 Vote.
+        self.internal_deposit(&sender_id, 1);
+        PromiseOrValue::Value(false)
     }
 }
 
