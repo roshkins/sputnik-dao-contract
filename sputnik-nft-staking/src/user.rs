@@ -9,6 +9,10 @@ const U64_LEN: StorageUsage = 8;
 const U128_LEN: StorageUsage = 16;
 const ACCOUNT_MAX_LENGTH: StorageUsage = 64;
 
+pub enum StorageKeys {
+    NFTVoteWeights,
+}
+
 /// User data.
 /// Recording deposited voting tokens, storage used and delegations for voting.
 /// Once delegated - the tokens are used in the votes. It records for each delegate when was the last vote.
@@ -20,12 +24,13 @@ pub struct User {
     pub storage_used: StorageUsage,
     /// Amount of $NEAR to cover storage.
     pub near_amount: U128,
-    /// Amount of staked token deposited.
-    pub vote_amount: U128,
+    /// Amounts of each staked NFT deposited.
+    pub vote_amounts: UnorderedMap<String, U128>,
     /// Withdrawal or next delegation available timestamp.
     pub next_action_timestamp: U64,
-    /// List of delegations to other accounts.
-    pub delegated_amounts: Vec<(AccountId, U128)>,
+    /// List of delegations by token to other accounts.
+    /// (AccountId, TokenId, VoteWeight: U128)
+    pub delegated_amounts: Vec<(AccountId, String, U128)>,
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
@@ -38,7 +43,7 @@ impl User {
         Self {
             storage_used: Self::min_storage(),
             near_amount: U128(near_amount),
-            vote_amount: U128(0),
+            vote_amounts: UnorderedMap::new(StorageKeys::NFTVoteWeights),
             delegated_amounts: vec![],
             next_action_timestamp: 0.into(),
         }
@@ -58,17 +63,17 @@ impl User {
         );
     }
 
-    pub(crate) fn delegated_amount(&self) -> Balance {
+    pub(crate) fn delegated_amount(&self, delegated_token_id: String) -> Balance {
         self.delegated_amounts
             .iter()
-            .fold(0, |total, (_, amount)| total + amount.0)
+            .fold(0, |total, (_, token_id, amount)| if token_id == delegated_token_id {total + amount.0})
     }
 
     /// Record delegation from this account to another account.
     /// Fails if not enough available balance to delegate.
-    pub fn delegate(&mut self, delegate_id: AccountId, amount: Balance) {
+    pub fn delegate(&mut self, delegate_id: AccountId, token_id: String, amount: Balance) {
         assert!(
-            self.delegated_amount() + amount <= self.vote_amount.0,
+            self.delegated_amount(token_id) + amount <= self.vote_amounts.get(&token_id).0,
             "ERR_NOT_ENOUGH_AMOUNT"
         );
         assert!(
@@ -76,7 +81,7 @@ impl User {
             "ERR_NOT_ENOUGH_TIME_PASSED"
         );
         self.storage_used += delegate_id.as_bytes().len() as StorageUsage + U128_LEN;
-        self.delegated_amounts.push((delegate_id, U128(amount)));
+        self.delegated_amounts.push((delegate_id, token_id, U128(amount)));
         self.assert_storage();
     }
 
@@ -85,6 +90,7 @@ impl User {
     pub fn undelegate(
         &mut self,
         delegate_id: &AccountId,
+        token_id: String,
         amount: Balance,
         undelegation_period: Duration,
     ) {
@@ -92,11 +98,11 @@ impl User {
             .delegated_amounts
             .iter()
             .enumerate()
-            .find(|(_, (account_id, _))| account_id == delegate_id)
+            .find(|(_, (account_id, delegate_token_id, _))| account_id == delegate_id && delegate_token_id == token_id)
             .expect("ERR_NO_DELEGATE");
-        let element = (f.0, ((f.1).1).0);
+        let element = (f.0, ((f.1).2).0);
         assert!(element.1 >= amount, "ERR_NOT_ENOUGH_AMOUNT");
-        if element.1 == amount {
+        if element.2 == amount {
             self.delegated_amounts.remove(element.0);
             self.storage_used -= delegate_id.as_bytes().len() as StorageUsage + U128_LEN;
         } else {
@@ -107,21 +113,21 @@ impl User {
 
     /// Withdraw the amount.
     /// Fails if there is not enough available balance.
-    pub fn withdraw(&mut self, amount: Balance) {
+    pub fn withdraw(&mut self, token_id: String, amount: Balance) {
         assert!(
-            self.delegated_amount() + amount <= self.vote_amount.0,
+            self.delegated_amount(token_id) + amount <= self.vote_amounts.get(&token_id),
             "ERR_NOT_ENOUGH_AVAILABLE_AMOUNT"
         );
         assert!(
             env::block_timestamp() >= self.next_action_timestamp.0,
             "ERR_NOT_ENOUGH_TIME_PASSED"
         );
-        self.vote_amount.0 -= amount;
+        self.vote_amounts.get(&token_id).0 -= amount;
     }
 
     /// Deposit given amount of vote tokens.
-    pub fn deposit(&mut self, amount: Balance) {
-        self.vote_amount.0 += amount;
+    pub fn deposit(&mut self, token_id: String, amount: Balance) {
+        self.vote_amounts.insert(&token_id,self.vote_amounts.get(&token_id) + amount);
     }
 
     /// Returns amount in NEAR that is available for storage.
@@ -159,21 +165,21 @@ impl Contract {
         );
     }
 
-    /// Deposit voting token.
-    pub fn internal_deposit(&mut self, sender_id: &AccountId, amount: Balance) {
+    /// Deposit a voting token.
+    pub fn internal_deposit(&mut self, sender_id: &AccountId, token_id: String, amount: Balance) {
         let mut sender = self.internal_get_user(&sender_id);
-        sender.deposit(amount);
+        sender.deposit(token_id, amount);
         self.save_user(&sender_id, sender);
-        self.total_amount += amount;
+        self.total_amount.insert(&token_id, self.total_amount.get(&token_id) + amount);
     }
 
     /// Withdraw voting token.
-    pub fn internal_withdraw(&mut self, sender_id: &AccountId, amount: Balance) {
+    pub fn internal_withdraw(&mut self, sender_id: &AccountId, token_id: String, amount: Balance) {
         let mut sender = self.internal_get_user(&sender_id);
-        sender.withdraw(amount);
+        sender.withdraw(token_id, amount);
         self.save_user(&sender_id, sender);
-        assert!(self.total_amount >= amount, "ERR_INTERNAL");
-        self.total_amount -= amount;
+        assert!(self.total_amount.get(&token_id) >= amount, "ERR_INTERNAL");
+        self.total_amount.insert(&token_id, self.total_amount.get(&token_id) + amount);
     }
 
     /// Given user delegates given amount of votes to another user.
@@ -182,10 +188,11 @@ impl Contract {
         &mut self,
         sender_id: AccountId,
         delegate_id: AccountId,
+        token_id: String,
         amount: Balance,
     ) {
         let mut sender = self.internal_get_user(&sender_id);
-        sender.delegate(delegate_id.clone(), amount);
+        sender.delegate( delegate_id.clone(), token_id, amount);
         self.save_user(&sender_id, sender);
     }
 
@@ -194,10 +201,11 @@ impl Contract {
         &mut self,
         sender_id: AccountId,
         delegate_id: AccountId,
+        token_id: String,
         amount: Balance,
     ) {
         let mut sender = self.internal_get_user(&sender_id);
-        sender.undelegate(&delegate_id, amount, self.unstake_period);
+        sender.undelegate(&delegate_id, token_id, amount, self.unstake_period);
         self.save_user(&sender_id, sender);
     }
 }

@@ -16,6 +16,7 @@ mod user;
 #[derive(BorshStorageKey, BorshSerialize)]
 enum StorageKeys {
     Users,
+    ValidNFTs,
 }
 
 /// Amount of gas for fungible token transfers.
@@ -43,7 +44,7 @@ pub struct Contract {
     /// DAO owner of this staking contract.
     owner_id: AccountId,
     /// Vote token account.
-    vote_token_id: UnorderedSet<String>,
+    vote_token_ids: UnorderedSet<String>,
     /// Recording user deposits.
     users: LookupMap<AccountId, VersionedUser>,
     /// Total token amount deposited per token.
@@ -51,7 +52,7 @@ pub struct Contract {
     /// Duration of unstaking. Should be over the possible voting periods.
     unstake_period: Duration,
 
-    token_vote_weight: LookupMap<String, U128>,
+    token_vote_weights: LookupMap<String, U128>,
 }
 
 #[ext_contract(ext_self)]
@@ -62,23 +63,38 @@ pub trait Contract {
 #[near_bindgen]
 impl Contract {
     #[init]
-    pub fn new(owner_id: AccountId, token_id: String, unstake_period: U64) -> Self {
+    pub fn new(owner_id: AccountId, token_ids: UnorderedSet<String>, unstake_period: U64, token_vote_weights: LookupMap<String, U128>) -> Self {
+        
         Self {
             owner_id: owner_id.into(),
-            vote_token_id: token_id.parse().unwrap(),
+            vote_token_ids: token_ids,
             users: LookupMap::new(StorageKeys::Users),
-            total_amount: 0,
+            total_amount: UnorderedMap::new(StorageKeys::ValidNFTs),
             unstake_period: unstake_period.0,
+            token_vote_weights,
         }
     }
 
     /// Total number of tokens staked in this contract.
     pub fn nft_total_supply(&self) -> U128 {
-        U128(self.total_amount)
+        let sum = 0;
+        for i in self.total_amount.iter() {
+            sum += i.1;
+        }
+        U128(sum)
+    }
+
+    /// Sum of each token amount times it's voting weight
+    pub fn total_voting_power(&self) -> U128 {
+        let sum = 0;
+        for i in self.total_amount.iter() {
+            sum += i.1 * self.token_vote_weights.get(&i.0).unwrap_or_default();
+        }
+        U128(sum)
     }
 
     /// Total number of tokens staked by given user.
-    pub fn nft_balance_of(&self, account_id: AccountId) -> U128 {
+    pub fn nft_balance_of(&self, account_id: AccountId) -> UnorderedMap<String, U128> {
         U128(self.internal_get_user(&account_id).vote_amount.0)
     }
 
@@ -123,7 +139,7 @@ impl Contract {
             sender_id.clone(),
             amount,
             None,
-            self.vote_token_id.clone(),
+            self.vote_token_ids.clone(),
             1,
             GAS_FOR_FT_TRANSFER,
         )
@@ -164,7 +180,7 @@ impl NonFungibleTokenReceiver for Contract {
         msg: String,
     ) -> PromiseOrValue<bool> {
         assert_eq!(
-            self.vote_token_id,
+            self.vote_token_ids,
             env::predecessor_account_id(),
             "ERR_INVALID_TOKEN"
         );
@@ -177,6 +193,7 @@ impl NonFungibleTokenReceiver for Contract {
 
 #[cfg(test)]
 mod tests {
+    use near_contract_standards::non_fungible_token::TokenId;
     use near_contract_standards::storage_management::StorageManagement;
     use near_sdk::json_types::U64;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
@@ -189,6 +206,7 @@ mod tests {
     #[test]
     fn test_basics() {
         let period = 1000;
+        const nft_id: TokenId = TokenId("TEST_NFT");
         let mut context = VMContextBuilder::new();
 
         testing_env!(context.predecessor_account_id(accounts(0)).build());
@@ -196,11 +214,11 @@ mod tests {
         testing_env!(context.attached_deposit(to_yocto("1")).build());
         contract.storage_deposit(Some(accounts(2)), None);
         testing_env!(context.predecessor_account_id(accounts(1)).build());
-        contract.ft_on_transfer(accounts(2), U128(to_yocto("100")), "".to_string());
-        assert_eq!(contract.ft_total_supply().0, to_yocto("100"));
-        assert_eq!(contract.ft_balance_of(accounts(2)).0, to_yocto("100"));
+        contract.nft_on_transfer(accounts(2), accounts(2), nft_id, "".to_string());
+        assert_eq!(contract.token_total_supply().0, 1);
+        assert_eq!(contract.nft_balance_of(accounts(2)).0, 1);
         testing_env!(context.predecessor_account_id(accounts(2)).build());
-        contract.withdraw(U128(to_yocto("50")));
+        contract.withdraw(U128(1));
         assert_eq!(contract.ft_total_supply().0, to_yocto("50"));
         assert_eq!(contract.ft_balance_of(accounts(2)).0, to_yocto("50"));
         contract.delegate(accounts(3), U128(to_yocto("10")));
