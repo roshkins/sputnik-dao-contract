@@ -1,5 +1,6 @@
-use near_contract_standards::fungible_token::core_impl::ext_fungible_token;
-use near_contract_standards::non_fungible_token::core::NonFungibleTokenReceiver;
+use near_contract_standards::non_fungible_token::core::{NonFungibleTokenCore, NonFungibleTokenReceiver};
+use serde::{Deserialize, Serialize};
+
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, UnorderedMap, UnorderedSet};
 use near_sdk::json_types::{U128, U64};
@@ -13,6 +14,9 @@ pub use user::{User, VersionedUser};
 mod storage_impl;
 mod user;
 
+#[ext_contract(ext_non_fungible_token)]
+trait NonFungibleTokenCore: NonFungibleTokenCore {}
+
 #[derive(BorshStorageKey, BorshSerialize)]
 enum StorageKeys {
     Users,
@@ -20,7 +24,7 @@ enum StorageKeys {
 }
 
 /// Amount of gas for fungible token transfers.
-pub const GAS_FOR_FT_TRANSFER: Gas = Gas(10_000_000_000_000);
+pub const GAS_FOR_NFT_TRANSFER: Gas = Gas(10_000_000_000_000);
 
 /// Amount of gas for delegate action.
 pub const GAS_FOR_DELEGATE: Gas = Gas(10_000_000_000_000);
@@ -57,14 +61,18 @@ pub struct Contract {
 
 #[ext_contract(ext_self)]
 pub trait Contract {
-    fn exchange_callback_post_withdraw(&mut self, sender_id: AccountId, amount: U128);
+    fn exchange_callback_post_withdraw(&mut self, sender_id: AccountId, token_id: String, amount: U128);
 }
 
 #[near_bindgen]
 impl Contract {
     #[init]
-    pub fn new(owner_id: AccountId, token_ids: UnorderedSet<String>, unstake_period: U64, token_vote_weights: LookupMap<String, U128>) -> Self {
-        
+    pub fn new(
+        owner_id: AccountId,
+        token_ids: UnorderedSet<String>,
+        unstake_period: U64,
+        token_vote_weights: LookupMap<String, U128>,
+    ) -> Self {
         Self {
             owner_id: owner_id.into(),
             vote_token_ids: token_ids,
@@ -114,7 +122,7 @@ impl Contract {
         self.internal_delegate(sender_id, account_id.clone().into(), token_id, amount.0);
         ext_sputnik::delegate(
             account_id.into(),
-            amount,
+            amount * self.token_vote_weights.get(&token_id),
             self.owner_id.clone(),
             0,
             GAS_FOR_DELEGATE,
@@ -127,7 +135,7 @@ impl Contract {
         self.internal_undelegate(sender_id, account_id.clone().into(), token_id, amount.0);
         ext_sputnik::undelegate(
             account_id.into(),
-            amount,
+            amount * self.token_vote_weights.get(&token_id),
             self.owner_id.clone(),
             0,
             GAS_FOR_UNDELEGATE,
@@ -139,25 +147,28 @@ impl Contract {
     pub fn withdraw(&mut self, token_id: String, amount: U128) -> Promise {
         let sender_id = env::predecessor_account_id();
         self.internal_withdraw(&sender_id, token_id, amount.0);
-        ext_fungible_token::ft_transfer(
-            sender_id.clone(),
-            amount,
-            None,
-            self.vote_token_ids.clone(),
-            1,
-            GAS_FOR_FT_TRANSFER,
-        )
+
+        ext_non_fungible_token::nft_transfer(sender_id.clone(), token_id.clone(), 0, None,
+        token_id.clone(), 
+        1,
+        GAS_FOR_NFT_TRANSFER )
         .then(ext_self::exchange_callback_post_withdraw(
             sender_id,
+            token_id,
             amount,
             env::current_account_id(),
             0,
-            GAS_FOR_FT_TRANSFER,
+            GAS_FOR_NFT_TRANSFER,
         ))
     }
 
     #[private]
-    pub fn exchange_callback_post_withdraw(&mut self, sender_id: AccountId, token_id: String, amount: U128) {
+    pub fn exchange_callback_post_withdraw(
+        &mut self,
+        sender_id: AccountId,
+        token_id: String,
+        amount: U128,
+    ) {
         assert_eq!(
             env::promise_results_count(),
             1,
@@ -168,7 +179,7 @@ impl Contract {
             PromiseResult::Successful(_) => {}
             PromiseResult::Failed => {
                 // This reverts the changes from withdraw function.
-                self.internal_deposit(&sender_id,token_id, amount.0);
+                self.internal_deposit(&sender_id, token_id, amount.0);
             }
         };
     }
