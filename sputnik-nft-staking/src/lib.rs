@@ -94,8 +94,12 @@ impl Contract {
     }
 
     /// Total number of tokens staked by given user.
-    pub fn nft_balance_of(&self, account_id: AccountId) -> UnorderedMap<String, U128> {
-        U128(self.internal_get_user(&account_id).vote_amount.0)
+    pub fn nft_balance_of(&self, token_id: String, account_id: AccountId) -> U128 {
+        let sum = 0;
+        for i in self.internal_get_user(&account_id).vote_amount.iter() {
+            sum += i.1;
+        }
+        U128(sum)
     }
 
     /// Returns user information.
@@ -105,9 +109,9 @@ impl Contract {
 
     /// Delegate give amount of votes to given account.
     /// If enough tokens and storage, forwards this to owner account.
-    pub fn delegate(&mut self, account_id: AccountId, amount: U128) -> Promise {
+    pub fn delegate(&mut self, account_id: AccountId, token_id: String, amount: U128) -> Promise {
         let sender_id = env::predecessor_account_id();
-        self.internal_delegate(sender_id, account_id.clone().into(), amount.0);
+        self.internal_delegate(sender_id, account_id.clone().into(), token_id, amount.0);
         ext_sputnik::delegate(
             account_id.into(),
             amount,
@@ -118,9 +122,9 @@ impl Contract {
     }
 
     /// Remove given amount of delegation.
-    pub fn undelegate(&mut self, account_id: AccountId, amount: U128) -> Promise {
+    pub fn undelegate(&mut self, account_id: AccountId, token_id: String, amount: U128) -> Promise {
         let sender_id = env::predecessor_account_id();
-        self.internal_undelegate(sender_id, account_id.clone().into(), amount.0);
+        self.internal_undelegate(sender_id, account_id.clone().into(), token_id, amount.0);
         ext_sputnik::undelegate(
             account_id.into(),
             amount,
@@ -132,9 +136,9 @@ impl Contract {
 
     /// Withdraw non delegated tokens back to the user's account.
     /// If user's account is not registered, will keep funds here.
-    pub fn withdraw(&mut self, amount: U128) -> Promise {
+    pub fn withdraw(&mut self, token_id: String, amount: U128) -> Promise {
         let sender_id = env::predecessor_account_id();
-        self.internal_withdraw(&sender_id, amount.0);
+        self.internal_withdraw(&sender_id, token_id, amount.0);
         ext_fungible_token::ft_transfer(
             sender_id.clone(),
             amount,
@@ -153,7 +157,7 @@ impl Contract {
     }
 
     #[private]
-    pub fn exchange_callback_post_withdraw(&mut self, sender_id: AccountId, amount: U128) {
+    pub fn exchange_callback_post_withdraw(&mut self, sender_id: AccountId, token_id: String, amount: U128) {
         assert_eq!(
             env::promise_results_count(),
             1,
@@ -164,7 +168,7 @@ impl Contract {
             PromiseResult::Successful(_) => {}
             PromiseResult::Failed => {
                 // This reverts the changes from withdraw function.
-                self.internal_deposit(&sender_id, amount.0);
+                self.internal_deposit(&sender_id,token_id, amount.0);
             }
         };
     }
@@ -186,7 +190,7 @@ impl NonFungibleTokenReceiver for Contract {
         );
         assert!(msg.is_empty(), "ERR_INVALID_MESSAGE");
         //TODO: Weight vote token amount by NFT, right now 1 NFT = 1 Vote.
-        self.internal_deposit(&sender_id, 1);
+        self.internal_deposit(&sender_id, token_id, self.token_vote_weights.get(&token_id));
         PromiseOrValue::Value(false)
     }
 }
