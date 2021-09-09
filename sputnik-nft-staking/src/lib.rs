@@ -6,10 +6,7 @@ use near_contract_standards::non_fungible_token::{TokenId};
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, UnorderedMap, UnorderedSet};
 use near_sdk::json_types::{U128, U64};
-use near_sdk::{
-    env, ext_contract, near_bindgen, AccountId, Balance, BorshStorageKey, Duration, Gas,
-    PanicOnDefault, Promise, PromiseOrValue, PromiseResult,
-};
+use near_sdk::{AccountId, Balance, BorshStorageKey, Duration, Gas, PanicOnDefault, Promise, PromiseOrValue, PromiseResult, env, ext_contract, near_bindgen};
 
 pub use user::{User, VersionedUser};
 
