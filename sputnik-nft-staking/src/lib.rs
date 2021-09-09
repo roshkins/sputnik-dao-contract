@@ -347,7 +347,7 @@ mod tests {
         assert_eq!(contract.nft_balance_of(accounts(2)).0, 2);
         
         //TODO: Check voting count went down. 
-        
+
         //Delegate voting nft to account 3
         contract.delegate(accounts(3), nft1.to_string(), U128(1));
 

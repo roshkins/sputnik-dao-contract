@@ -1,4 +1,5 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
+use near_sdk::env::sha256;
 use near_sdk::json_types::{U128, U64};
 use near_sdk::{env, AccountId, Balance, Duration, StorageUsage};
 use serde::Serialize;
@@ -48,11 +49,14 @@ impl Serialize for User {
 }
 
 impl User {
-    pub fn new(near_amount: Balance) -> Self {
+    pub fn new(account_id: &AccountId, near_amount: Balance) -> Self {
+        let mut vote_amounts_prefix = sha256(account_id.as_bytes());
+        let mut vote_amounts_bytes = vec![b'v', b'a'];
+        vote_amounts_prefix.append(&mut vote_amounts_bytes);
         Self {
             storage_used: Self::min_storage(),
             near_amount: U128(near_amount),
-            vote_amounts: UnorderedMap::new(StorageKeys::NFTVoteWeights),
+            vote_amounts: UnorderedMap::new(vote_amounts_prefix),
             delegated_amounts: vec![],
             next_action_timestamp: 0.into(),
         }
@@ -203,7 +207,7 @@ impl Contract {
 
     /// Internal register new user.
     pub fn internal_register_user(&mut self, sender_id: &AccountId, near_amount: Balance) {
-        let user = User::new(near_amount);
+        let user = User::new(&sender_id, near_amount);
         self.save_user(sender_id, user);
         ext_sputnik::register_delegation(
             sender_id.clone(),
