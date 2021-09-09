@@ -132,7 +132,7 @@ pub struct Contract {
     total_amount: UnorderedMap<String, Balance>,
     /// Duration of unstaking. Should be over the possible voting periods.
     unstake_period: Duration,
-
+    /// Number of votes a given NFT has.
     token_vote_weights: LookupMap<String, U128>,
 }
 
@@ -377,31 +377,44 @@ mod tests {
         assert_eq!(contract.nft_total_supply().0, 3);
         assert_eq!(contract.nft_balance_of(accounts(2)).0, 3);
 
-        //Create account 2
+        // See 9 voting tokens
+        assert_eq!(contract.total_voting_power().0, 9);
+
+        // Create account 2
         testing_env!(context.predecessor_account_id(accounts(2)).build());
 
-        //Withdraw nft4 and check that balance went down.
+        // Withdraw nft4 and check that balance went down.
         contract.withdraw(nft4.to_string(), U128(1));
         assert_eq!(contract.nft_total_supply().0, 2);
         assert_eq!(contract.nft_balance_of(accounts(2)).0, 2);
 
-        //TODO: Check voting count went down.
+        // Check voting count went down.
+        assert_eq!(contract.total_voting_power().0, 2);
 
-        //Delegate voting nft to account 3
+        // Delegate voting nft to account 3
         contract.delegate(accounts(3), nft1.to_string(), U128(1));
 
-        //See that user2 has nft1 delegation
+        // See that user2 has delegated nft1
         let user = contract.get_user(accounts(2));
         assert_eq!(user.delegated_amount(nft1.to_string()), 1);
 
-        //Undelegate nft1
+        // User 3 has corresponding vote power and user 2 has less.
+        assert_eq!(user.get_vote_amount(), 0);
+        let user3 = contract.get_user(accounts(3));
+        assert_eq!(user3.get_vote_amount(), 2);
+
+        // Undelegate nft1
         contract.undelegate(accounts(3), nft1.to_string(), U128(1));
 
-        //See that it was succesfully undelegated
+        // See that it was succesfully undelegated
         let user = contract.get_user(accounts(2));
         assert_eq!(user.delegated_amount(nft1.to_string()), 0);
 
-        //Check that a next_action_timestamp exists
+        // User 3 has corresponding vote power and user 2 has more.
+        assert_eq!(user.get_vote_amount(), 2);
+        let user3 = contract.get_user(accounts(3));
+        assert_eq!(user3.get_vote_amount(), 0);
+        // Check that a next_action_timestamp exists
         assert_eq!(user.next_action_timestamp, U64(period));
     }
 }

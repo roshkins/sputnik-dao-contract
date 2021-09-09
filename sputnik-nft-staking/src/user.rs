@@ -10,11 +10,6 @@ const U64_LEN: StorageUsage = 8;
 const U128_LEN: StorageUsage = 16;
 const ACCOUNT_MAX_LENGTH: StorageUsage = 64;
 
-#[derive(BorshSerialize, BorshDeserialize, BorshStorageKey)]
-pub enum StorageKeys {
-    NFTVoteWeights,
-}
-
 /// User data.
 /// Recording deposited voting tokens, storage used and delegations for voting.
 /// Once delegated - the tokens are used in the votes. It records for each delegate when was the last vote.
@@ -32,6 +27,8 @@ pub struct User {
     /// List of delegations by token to other accounts.
     /// (AccountId, TokenId, VoteWeight: U128)
     pub delegated_amounts: Vec<(AccountId, String, U128)>,
+    /// Number of votes a given NFT has.
+    pub token_vote_weights: &LookupMap<String, U128>,
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
@@ -48,8 +45,8 @@ impl Serialize for User {
     }
 }
 
-impl User {
-    pub fn new(account_id: &AccountId, near_amount: Balance) -> Self {
+impl User{
+    pub fn new(account_id: &AccountId, near_amount: Balance, token_vote_weights: &LookupMap<String, U128>) -> Self {
         let mut vote_amounts_prefix = sha256(account_id.as_bytes());
         let mut vote_amounts_bytes = vec![b'v', b'a'];
         vote_amounts_prefix.append(&mut vote_amounts_bytes);
@@ -59,13 +56,23 @@ impl User {
             vote_amounts: UnorderedMap::new(vote_amounts_prefix),
             delegated_amounts: vec![],
             next_action_timestamp: 0.into(),
+            token_vote_weights: (token_vote_weights),
         }
     }
 
     pub fn get_vote_amount(&self) -> u128 {
         let mut sum = 0;
-        for (_, amount) in self.vote_amounts.iter() {
-            sum += amount.0;
+        for (token_id, amount) in self.vote_amounts.iter() {
+            let mut delegated = false;
+            for (_, delegated_token_id, _) in &self.delegated_amounts {
+                if delegated_token_id == &token_id {
+                    delegated = true;
+                }
+            }
+            if delegated {
+                continue;
+            }
+            sum += amount.0 * &self.token_vote_weights.get(&token_id).unwrap().0;
         }
         sum
     }
@@ -207,7 +214,7 @@ impl Contract {
 
     /// Internal register new user.
     pub fn internal_register_user(&mut self, sender_id: &AccountId, near_amount: Balance) {
-        let user = User::new(&sender_id, near_amount);
+        let user = User::new(&sender_id, near_amount, &self.token_vote_weights);
         self.save_user(sender_id, user);
         ext_sputnik::register_delegation(
             sender_id.clone(),
@@ -254,6 +261,7 @@ impl Contract {
     ) {
         let mut sender = self.internal_get_user(&sender_id);
         sender.delegate(delegate_id.clone(), token_id, amount);
+
         self.save_user(&sender_id, sender);
     }
 
