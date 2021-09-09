@@ -141,6 +141,7 @@ pub trait Contract {
 
 #[near_bindgen]
 impl Contract {
+    //TODO: use a Map for token_ids to vote_weights for optimization
     #[init]
     pub fn new(
         #[serializer(borsh)] owner_id: AccountId,
@@ -281,7 +282,6 @@ impl NonFungibleTokenReceiver for Contract {
 
 #[cfg(test)]
 mod tests {
-    use near_contract_standards::non_fungible_token::TokenId;
     use near_contract_standards::storage_management::StorageManagement;
     use near_sdk::json_types::U64;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
@@ -291,30 +291,76 @@ mod tests {
 
     use super::*;
 
+    #[derive(BorshStorageKey, BorshSerialize)]
+    enum StorageKeys {
+        NFTs,
+        VoteWeights
+    }
     #[test]
     fn test_basics() {
         let period = 1000;
-        const nft_id: TokenId = TokenId("TEST_NFT");
         let mut context = VMContextBuilder::new();
 
         testing_env!(context.predecessor_account_id(accounts(0)).build());
-        let mut contract = Contract::new(accounts(0), accounts(1).to_string(), U64(period));
-        testing_env!(context.attached_deposit(to_yocto("1")).build());
+
+        // Create a staking contract with account 0 as owner (perhaps Sputnikv2 contract)
+        // with token accounts 1 and 4, 5 as example NFT token ids, NFT1 weighted 2, NFT4 weighted 7, NFT5 weighted 0 (for error checking).
+        let mut nft_ids= UnorderedSet::new(StorageKeys::NFTs);
+        let nft1 = accounts(1);
+        let nft4 = accounts(4);
+        let nft5 =accounts(5);
+        nft_ids.insert(&nft1.to_string());
+        nft_ids.insert(&nft4.to_string());
+        nft_ids.insert(&nft5.to_string());
+
+        let mut vote_weights = LookupMap::new(StorageKeys::VoteWeights);
+        vote_weights.insert(&nft1.to_string(), &U128(2));
+        vote_weights.insert(&nft4.to_string(), &U128(7));
+        vote_weights.insert(&nft5.to_string(), &U128(0));
+
+        let mut contract = Contract::new(accounts(0), nft_ids, U64(period), vote_weights);
+
+        // Store 1 yoctoⓃ per NFT for storage deposit
+        testing_env!(context.attached_deposit(to_yocto("3")).build());
         contract.storage_deposit(Some(accounts(2)), None);
-        testing_env!(context.predecessor_account_id(accounts(1)).build());
-        contract.nft_on_transfer(accounts(2), accounts(2), nft_id, "".to_string());
-        assert_eq!(contract.token_total_supply().0, 1);
-        assert_eq!(contract.nft_balance_of(accounts(2)).0, 1);
+
+        //Create NFTs
+        testing_env!(context.predecessor_account_id(nft1.clone()).build());
+        testing_env!(context.predecessor_account_id(nft4.clone()).build());
+        testing_env!(context.predecessor_account_id(nft5.clone()).build());
+
+        // Send NFTs to staking contract.
+        contract.nft_on_transfer(accounts(2), accounts(2), nft1.to_string(), "".to_string());
+        contract.nft_on_transfer(accounts(2), accounts(2), nft4.to_string(), "".to_string());
+        contract.nft_on_transfer(accounts(2), accounts(2), nft5.to_string(), "".to_string());
+
+        // See 3 tokens deposited.
+        assert_eq!(contract.nft_total_supply().0, 3);
+        assert_eq!(contract.nft_balance_of(accounts(2)).0, 3);
+
+        //Create account 2
         testing_env!(context.predecessor_account_id(accounts(2)).build());
-        contract.withdraw(U128(1));
-        assert_eq!(contract.ft_total_supply().0, to_yocto("50"));
-        assert_eq!(contract.ft_balance_of(accounts(2)).0, to_yocto("50"));
-        contract.delegate(accounts(3), U128(to_yocto("10")));
+
+        //Withdraw nft4 and check that balance went down.
+        contract.withdraw(nft4.to_string(), U128(1));
+        assert_eq!(contract.nft_total_supply().0, 2);
+        assert_eq!(contract.nft_balance_of(accounts(2)).0, 2);
+
+        //Delegate voting nft to account 3
+        contract.delegate(accounts(3), nft1.to_string(), U128(1));
+
+        //See that user2 has nft1 delegation
         let user = contract.get_user(accounts(2));
-        assert_eq!(user.delegated_amount(), to_yocto("10"));
-        contract.undelegate(accounts(3), U128(to_yocto("10")));
+        assert_eq!(user.delegated_amount(nft1.to_string()), 1);
+
+        //Undelegate nft1
+        contract.undelegate(accounts(3), nft1.to_string(), U128(1));
+
+        //See that it was succesfully undelegated
         let user = contract.get_user(accounts(2));
-        assert_eq!(user.delegated_amount(), 0);
+        assert_eq!(user.delegated_amount(nft1.to_string()), 0);
+
+        //Check that a next_action_timestamp exists
         assert_eq!(user.next_action_timestamp, U64(period));
     }
 }
