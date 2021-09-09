@@ -17,7 +17,7 @@ pub enum StorageKeys {
 /// Recording deposited voting tokens, storage used and delegations for voting.
 /// Once delegated - the tokens are used in the votes. It records for each delegate when was the last vote.
 /// When undelegating - the new delegations or withdrawal are only available after cooldown period from last vote of the delegate.
-#[derive(BorshSerialize, BorshDeserialize, Debug)]
+#[derive(BorshSerialize, BorshDeserialize, /* Debug */)]
 pub struct User {
     /// Total amount of storage used by this user struct.
     pub storage_used: StorageUsage,
@@ -49,7 +49,7 @@ impl User {
     }
 
     pub fn get_vote_amount(&self) -> u128 {
-        let sum = 0;
+        let mut sum = 0;
         for (_, amount) in self.vote_amounts.iter() { 
             sum += amount.0;
         }
@@ -80,7 +80,7 @@ impl User {
     /// Fails if not enough available balance to delegate.
     pub fn delegate(&mut self, delegate_id: AccountId, token_id: String, amount: Balance) {
         assert!(
-            self.delegated_amount(token_id) + amount <= self.vote_amounts.get(&token_id).unwrap_or(U128(0)).0,
+            self.delegated_amount(token_id.clone()) + amount <= self.vote_amounts.get(&token_id.clone()).unwrap_or(U128(0)).0,
             "ERR_NOT_ENOUGH_AMOUNT"
         );
         assert!(
@@ -122,14 +122,14 @@ impl User {
     /// Fails if there is not enough available balance.
     pub fn withdraw(&mut self, token_id: String, amount: Balance) {
         assert!(
-            self.delegated_amount(token_id) + amount <= self.vote_amounts.get(&token_id).unwrap_or(U128(0)).0,
+            self.delegated_amount(token_id.clone()) + amount <= self.vote_amounts.get(&token_id.clone()).unwrap_or(U128(0)).0,
             "ERR_NOT_ENOUGH_AVAILABLE_AMOUNT"
         );
         assert!(
             env::block_timestamp() >= self.next_action_timestamp.0,
             "ERR_NOT_ENOUGH_TIME_PASSED"
         );
-        self.vote_amounts.insert(&token_id, &U128(self.vote_amounts.get(&token_id).unwrap_or(U128(0)).0 - amount));
+        self.vote_amounts.insert(&token_id.clone(), &U128(self.vote_amounts.get(&token_id.clone()).unwrap_or(U128(0)).0 - amount));
     }
 
     /// Deposit given amount of vote tokens.
@@ -175,17 +175,17 @@ impl Contract {
     /// Deposit a voting token.
     pub fn internal_deposit(&mut self, sender_id: &AccountId, token_id: String, amount: Balance) {
         let mut sender = self.internal_get_user(&sender_id);
-        sender.deposit(token_id, amount);
+        sender.deposit(token_id.clone(), amount);
         self.save_user(&sender_id, sender);
-        self.total_amount.insert(&token_id, &(self.total_amount.get(&token_id).unwrap_or_default() + amount));
+        self.total_amount.insert(&token_id.clone(), &(self.total_amount.get(&token_id).unwrap_or_default() + amount));
     }
 
     /// Withdraw voting token.
     pub fn internal_withdraw(&mut self, sender_id: &AccountId, token_id: String, amount: Balance) {
         let mut sender = self.internal_get_user(&sender_id);
-        sender.withdraw(token_id, amount);
+        sender.withdraw(token_id.clone(), amount);
         self.save_user(&sender_id, sender);
-        assert!(self.total_amount.get(&token_id).unwrap_or_default() >= amount, "ERR_INTERNAL");
+        assert!(self.total_amount.get(&token_id.clone()).unwrap_or_default() >= amount, "ERR_INTERNAL");
         self.total_amount.insert(&token_id, &(self.total_amount.get(&token_id).unwrap_or_default() + amount));
     }
 

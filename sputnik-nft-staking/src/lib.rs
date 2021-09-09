@@ -164,7 +164,7 @@ impl Contract {
 
     /// Total number of tokens staked in this contract.
     pub fn nft_total_supply(&self) -> U128 {
-        let sum = 0;
+        let mut sum = 0;
         for i in self.total_amount.iter() {
             sum += i.1;
         }
@@ -173,7 +173,7 @@ impl Contract {
 
     /// Sum of each token amount times it's voting weight
     pub fn total_voting_power(&self) -> U128 {
-        let sum = 0;
+        let mut sum = 0;
         for i in self.total_amount.iter() {
             sum += i.1 * self.token_vote_weights.get(&i.0).unwrap_or(U128(0)).0;
         }
@@ -181,8 +181,8 @@ impl Contract {
     }
 
     /// Total number of tokens staked by given user.
-    pub fn nft_balance_of(&self, token_id: String, account_id: AccountId) -> U128 {
-        let sum = 0;
+    pub fn nft_balance_of(&self, account_id: AccountId) -> U128 {
+        let mut sum = 0;
         for i in self.internal_get_user(&account_id).vote_amounts.iter() {
             sum += i.1.0; //Get second field, then get unwrapped number.
         }
@@ -198,10 +198,10 @@ impl Contract {
     /// If enough tokens and storage, forwards this to owner account.
     pub fn delegate(&mut self, account_id: AccountId, token_id: String, amount: U128) -> Promise {
         let sender_id = env::predecessor_account_id();
-        self.internal_delegate(sender_id, account_id.clone().into(), token_id, amount.0);
+        self.internal_delegate(sender_id, account_id.clone().into(), token_id.clone(), amount.0);
         ext_sputnik::delegate(
             account_id.into(),
-            U128(amount.0 * self.token_vote_weights.get(&token_id).unwrap_or(U128(0)).0),
+            U128(amount.0 * self.token_vote_weights.get(&token_id.clone()).unwrap_or(U128(0)).0),
             self.owner_id.clone(),
             0,
             GAS_FOR_DELEGATE,
@@ -211,10 +211,10 @@ impl Contract {
     /// Remove given amount of delegation.
     pub fn undelegate(&mut self, account_id: AccountId, token_id: String, amount: U128) -> Promise {
         let sender_id = env::predecessor_account_id();
-        self.internal_undelegate(sender_id, account_id.clone().into(), token_id, amount.0);
+        self.internal_undelegate(sender_id, account_id.clone().into(), token_id.clone(), amount.0);
         ext_sputnik::undelegate(
             account_id.into(),
-            U128(amount.0 * self.token_vote_weights.get(&token_id).unwrap_or(U128(0)).0),
+            U128(amount.0 * self.token_vote_weights.get(&token_id.clone()).unwrap_or(U128(0)).0),
             self.owner_id.clone(),
             0,
             GAS_FOR_UNDELEGATE,
@@ -225,7 +225,7 @@ impl Contract {
     /// If user's account is not registered, will keep funds here.
     pub fn withdraw(&mut self, token_id: String, amount: U128) -> Promise {
         let sender_id = env::predecessor_account_id();
-        self.internal_withdraw(&sender_id, token_id, amount.0);
+        self.internal_withdraw(&sender_id, token_id.clone(), amount.0);
 
         ext_non_fungible_token::nft_transfer(sender_id.clone(), token_id.clone(), Some(0), None,
         AccountId::try_from(token_id.clone()).unwrap(), 
@@ -269,7 +269,7 @@ impl NonFungibleTokenReceiver for Contract {
     fn nft_on_transfer(
         &mut self,
         sender_id: AccountId,
-        previous_owner_id: AccountId,
+        _previous_owner_id: AccountId,
         token_id: near_contract_standards::non_fungible_token::TokenId,
         msg: String,
     ) -> PromiseOrValue<bool> {
@@ -277,7 +277,7 @@ impl NonFungibleTokenReceiver for Contract {
         "ERR_INVALID_TOKEN");
         assert!(msg.is_empty(), "ERR_INVALID_MESSAGE");
         //TODO: Weight vote token amount by NFT, right now 1 NFT = 1 Vote.
-        self.internal_deposit(&sender_id, token_id, self.token_vote_weights.get(&token_id).unwrap_or(U128(0)).0);
+        self.internal_deposit(&sender_id, token_id.clone(), self.token_vote_weights.get(&token_id.clone()).unwrap_or(U128(0)).0);
         PromiseOrValue::Value(false)
     }
 }
