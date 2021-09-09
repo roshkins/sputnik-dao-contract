@@ -239,7 +239,7 @@ impl Contract {
         );
         self.total_amount.insert(
             &token_id,
-            &(self.total_amount.get(&token_id).unwrap_or_default() + amount),
+            &(self.total_amount.get(&token_id).unwrap_or_default() - amount),
         );
     }
 

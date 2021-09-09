@@ -1,12 +1,15 @@
 use std::convert::TryFrom;
 
-use near_contract_standards::non_fungible_token::core::{NonFungibleTokenReceiver};
-use near_contract_standards::non_fungible_token::{TokenId};
+use near_contract_standards::non_fungible_token::core::NonFungibleTokenReceiver;
+use near_contract_standards::non_fungible_token::TokenId;
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, UnorderedMap, UnorderedSet};
 use near_sdk::json_types::{U128, U64};
-use near_sdk::{AccountId, Balance, BorshStorageKey, Duration, Gas, PanicOnDefault, Promise, PromiseOrValue, PromiseResult, env, ext_contract, near_bindgen};
+use near_sdk::{
+    env, ext_contract, near_bindgen, AccountId, Balance, BorshStorageKey, Duration, Gas,
+    PanicOnDefault, Promise, PromiseOrValue, PromiseResult,
+};
 
 pub use user::{User, VersionedUser};
 
@@ -91,7 +94,6 @@ pub trait NonFungibleTokenCore {
     fn nft_token(&self, token_id: TokenId) -> Option<Token>;
 }
 
-
 #[derive(BorshStorageKey, BorshSerialize)]
 enum StorageKeys {
     Users,
@@ -136,7 +138,12 @@ pub struct Contract {
 
 #[ext_contract(ext_self)]
 pub trait Contract {
-    fn exchange_callback_post_withdraw(&mut self, sender_id: AccountId, token_id: String, amount: U128);
+    fn exchange_callback_post_withdraw(
+        &mut self,
+        sender_id: AccountId,
+        token_id: String,
+        amount: U128,
+    );
 }
 
 #[near_bindgen]
@@ -182,7 +189,7 @@ impl Contract {
     pub fn nft_balance_of(&self, account_id: AccountId) -> U128 {
         let mut sum = 0;
         for i in self.internal_get_user(&account_id).vote_amounts.iter() {
-            sum += i.1.0; //Get second field, then get unwrapped number.
+            sum += i.1 .0; //Get second field, then get unwrapped number.
         }
         U128(sum)
     }
@@ -196,10 +203,22 @@ impl Contract {
     /// If enough tokens and storage, forwards this to owner account.
     pub fn delegate(&mut self, account_id: AccountId, token_id: String, amount: U128) -> Promise {
         let sender_id = env::predecessor_account_id();
-        self.internal_delegate(sender_id, account_id.clone().into(), token_id.clone(), amount.0);
+        self.internal_delegate(
+            sender_id,
+            account_id.clone().into(),
+            token_id.clone(),
+            amount.0,
+        );
         ext_sputnik::delegate(
             account_id.into(),
-            U128(amount.0 * self.token_vote_weights.get(&token_id.clone()).unwrap_or(U128(0)).0),
+            U128(
+                amount.0
+                    * self
+                        .token_vote_weights
+                        .get(&token_id.clone())
+                        .unwrap_or(U128(0))
+                        .0,
+            ),
             self.owner_id.clone(),
             0,
             GAS_FOR_DELEGATE,
@@ -209,10 +228,22 @@ impl Contract {
     /// Remove given amount of delegation.
     pub fn undelegate(&mut self, account_id: AccountId, token_id: String, amount: U128) -> Promise {
         let sender_id = env::predecessor_account_id();
-        self.internal_undelegate(sender_id, account_id.clone().into(), token_id.clone(), amount.0);
+        self.internal_undelegate(
+            sender_id,
+            account_id.clone().into(),
+            token_id.clone(),
+            amount.0,
+        );
         ext_sputnik::undelegate(
             account_id.into(),
-            U128(amount.0 * self.token_vote_weights.get(&token_id.clone()).unwrap_or(U128(0)).0),
+            U128(
+                amount.0
+                    * self
+                        .token_vote_weights
+                        .get(&token_id.clone())
+                        .unwrap_or(U128(0))
+                        .0,
+            ),
             self.owner_id.clone(),
             0,
             GAS_FOR_UNDELEGATE,
@@ -225,10 +256,15 @@ impl Contract {
         let sender_id = env::predecessor_account_id();
         self.internal_withdraw(&sender_id, token_id.clone(), amount.0);
 
-        ext_non_fungible_token::nft_transfer(sender_id.clone(), token_id.clone(), Some(0), None,
-        AccountId::try_from(token_id.clone()).unwrap(), 
-        1,
-        GAS_FOR_NFT_TRANSFER )
+        ext_non_fungible_token::nft_transfer(
+            sender_id.clone(),
+            token_id.clone(),
+            Some(0),
+            None,
+            AccountId::try_from(token_id.clone()).unwrap(),
+            1,
+            GAS_FOR_NFT_TRANSFER,
+        )
         .then(ext_self::exchange_callback_post_withdraw(
             sender_id,
             token_id,
@@ -271,11 +307,14 @@ impl NonFungibleTokenReceiver for Contract {
         token_id: near_contract_standards::non_fungible_token::TokenId,
         msg: String,
     ) -> PromiseOrValue<bool> {
-        assert!(self.vote_token_ids.contains(&env::predecessor_account_id().as_str().to_string()),
-        "ERR_INVALID_TOKEN");
+        assert!(
+            self.vote_token_ids
+                .contains(&env::predecessor_account_id().as_str().to_string()),
+            "ERR_INVALID_TOKEN"
+        );
         assert!(msg.is_empty(), "ERR_INVALID_MESSAGE");
-        //TODO: Weight vote token amount by NFT, right now 1 NFT = 1 Vote.
-        self.internal_deposit(&sender_id, token_id.clone(), self.token_vote_weights.get(&token_id.clone()).unwrap_or(U128(0)).0);
+
+        self.internal_deposit(&sender_id, token_id.clone(), 1);
         PromiseOrValue::Value(false)
     }
 }
@@ -294,7 +333,7 @@ mod tests {
     #[derive(BorshStorageKey, BorshSerialize)]
     enum StorageKeys {
         NFTs,
-        VoteWeights
+        VoteWeights,
     }
     #[test]
     fn test_basics() {
@@ -305,10 +344,10 @@ mod tests {
 
         // Create a staking contract with account 0 as owner (perhaps Sputnikv2 contract)
         // with token accounts 1 and 4, 5 as example NFT token ids, NFT1 weighted 2, NFT4 weighted 7, NFT5 weighted 0 (for error checking).
-        let mut nft_ids= UnorderedSet::new(StorageKeys::NFTs);
+        let mut nft_ids = UnorderedSet::new(StorageKeys::NFTs);
         let nft1 = accounts(1);
         let nft4 = accounts(4);
-        let nft5 =accounts(5);
+        let nft5 = accounts(5);
         nft_ids.insert(&nft1.to_string());
         nft_ids.insert(&nft4.to_string());
         nft_ids.insert(&nft5.to_string());
@@ -345,8 +384,8 @@ mod tests {
         contract.withdraw(nft4.to_string(), U128(1));
         assert_eq!(contract.nft_total_supply().0, 2);
         assert_eq!(contract.nft_balance_of(accounts(2)).0, 2);
-        
-        //TODO: Check voting count went down. 
+
+        //TODO: Check voting count went down.
 
         //Delegate voting nft to account 3
         contract.delegate(accounts(3), nft1.to_string(), U128(1));
