@@ -1,3 +1,5 @@
+use std::convert::TryFrom;
+
 use near_contract_standards::non_fungible_token::core::{NonFungibleTokenReceiver};
 use near_contract_standards::non_fungible_token::{TokenId};
 
@@ -144,11 +146,11 @@ pub trait Contract {
 impl Contract {
     #[init]
     pub fn new(
-        owner_id: AccountId,
-        token_ids: UnorderedSet<String>,
-        unstake_period: U64,
+        #[serializer(borsh)] owner_id: AccountId,
+        #[serializer(borsh)] token_ids: UnorderedSet<String>,
+        #[serializer(borsh)] unstake_period: U64,
         //TODO: Optimize storage, see: https://stackoverflow.com/questions/69096013/how-can-i-serialize-a-near-sdk-rs-lookupmap-that-uses-a-string-as-a-key-or-is-t
-        token_vote_weights: UnorderedMap<String, U128>,
+        #[serializer(borsh)] token_vote_weights: LookupMap<String, U128>,
     ) -> Self {
         Self {
             owner_id: owner_id.into(),
@@ -173,7 +175,7 @@ impl Contract {
     pub fn total_voting_power(&self) -> U128 {
         let sum = 0;
         for i in self.total_amount.iter() {
-            sum += i.1 * self.token_vote_weights.get(&i.0).unwrap_or_default();
+            sum += i.1 * self.token_vote_weights.get(&i.0).unwrap_or(U128(0)).0;
         }
         U128(sum)
     }
@@ -181,8 +183,8 @@ impl Contract {
     /// Total number of tokens staked by given user.
     pub fn nft_balance_of(&self, token_id: String, account_id: AccountId) -> U128 {
         let sum = 0;
-        for i in self.internal_get_user(&account_id).vote_amount.iter() {
-            sum += i.1;
+        for i in self.internal_get_user(&account_id).vote_amounts.iter() {
+            sum += i.1.0; //Get second field, then get unwrapped number.
         }
         U128(sum)
     }
@@ -199,7 +201,7 @@ impl Contract {
         self.internal_delegate(sender_id, account_id.clone().into(), token_id, amount.0);
         ext_sputnik::delegate(
             account_id.into(),
-            amount * self.token_vote_weights.get(&token_id),
+            U128(amount.0 * self.token_vote_weights.get(&token_id).unwrap_or(U128(0)).0),
             self.owner_id.clone(),
             0,
             GAS_FOR_DELEGATE,
@@ -212,7 +214,7 @@ impl Contract {
         self.internal_undelegate(sender_id, account_id.clone().into(), token_id, amount.0);
         ext_sputnik::undelegate(
             account_id.into(),
-            amount * self.token_vote_weights.get(&token_id),
+            U128(amount.0 * self.token_vote_weights.get(&token_id).unwrap_or(U128(0)).0),
             self.owner_id.clone(),
             0,
             GAS_FOR_UNDELEGATE,
@@ -225,8 +227,8 @@ impl Contract {
         let sender_id = env::predecessor_account_id();
         self.internal_withdraw(&sender_id, token_id, amount.0);
 
-        ext_non_fungible_token::nft_transfer(sender_id.clone(), token_id.clone(), 0, None,
-        token_id.clone(), 
+        ext_non_fungible_token::nft_transfer(sender_id.clone(), token_id.clone(), Some(0), None,
+        AccountId::try_from(token_id.clone()).unwrap(), 
         1,
         GAS_FOR_NFT_TRANSFER )
         .then(ext_self::exchange_callback_post_withdraw(
@@ -271,14 +273,11 @@ impl NonFungibleTokenReceiver for Contract {
         token_id: near_contract_standards::non_fungible_token::TokenId,
         msg: String,
     ) -> PromiseOrValue<bool> {
-        assert_eq!(
-            self.vote_token_ids,
-            env::predecessor_account_id(),
-            "ERR_INVALID_TOKEN"
-        );
+        assert!(self.vote_token_ids.contains(&env::predecessor_account_id().as_str().to_string()),
+        "ERR_INVALID_TOKEN");
         assert!(msg.is_empty(), "ERR_INVALID_MESSAGE");
         //TODO: Weight vote token amount by NFT, right now 1 NFT = 1 Vote.
-        self.internal_deposit(&sender_id, token_id, self.token_vote_weights.get(&token_id));
+        self.internal_deposit(&sender_id, token_id, self.token_vote_weights.get(&token_id).unwrap_or(U128(0)).0);
         PromiseOrValue::Value(false)
     }
 }
