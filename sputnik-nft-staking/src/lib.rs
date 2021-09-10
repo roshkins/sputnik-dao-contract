@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
 use near_contract_standards::non_fungible_token::core::NonFungibleTokenReceiver;
@@ -98,6 +99,7 @@ pub trait NonFungibleTokenCore {
 enum StorageKeys {
     Users,
     ValidNFTs,
+    TokenIDs,
 }
 
 /// Amount of gas for fungible token transfers.
@@ -149,28 +151,27 @@ impl Contract {
     //TODO: use a Map for token_ids to vote_weights for optimization
     #[init]
     pub fn new(
-        #[serializer(borsh)] owner_id: AccountId,
-        #[serializer(borsh)] token_ids_with_vote_weights: UnorderedMap<String, U128>,
-        #[serializer(borsh)] unstake_period: U64,
+        owner_id: AccountId,
+        token_ids_with_vote_weights: BTreeMap<String, U128>,
+        unstake_period: U64,
         //TODO: Optimize storage, see: https://stackoverflow.com/questions/69096013/how-can-i-serialize-a-near-sdk-rs-lookupmap-that-uses-a-string-as-a-key-or-is-t
     ) -> Self {
+        let mut token_ids = UnorderedMap::new(StorageKeys::TokenIDs);
+        token_ids.extend(token_ids_with_vote_weights);
         Self {
             owner_id: owner_id.into(),
-            token_ids_with_vote_weights,
+            token_ids_with_vote_weights: token_ids,
             users: LookupMap::new(StorageKeys::Users),
             total_amount: UnorderedMap::new(StorageKeys::ValidNFTs),
             unstake_period: unstake_period.0,
         }
     }
 
-    pub fn adopt_new_nfts(
-        &mut self,
-        #[serializer(borsh)] token_ids_and_weights: UnorderedMap<String, U128>,
-    ) {
+    pub fn adopt_new_nfts(&mut self, token_ids_and_weights: BTreeMap<String, U128>) {
         let sender_id = env::predecessor_account_id();
         assert!(sender_id == self.owner_id, "ERR_INVALID_APPROVER");
         self.token_ids_with_vote_weights
-            .extend(token_ids_and_weights.iter());
+            .extend(token_ids_and_weights);
     }
 
     /// Total number of tokens staked in this contract.
@@ -344,10 +345,6 @@ mod tests {
 
     use super::*;
 
-    #[derive(BorshStorageKey, BorshSerialize)]
-    enum StorageKeys {
-        NFTs,
-    }
     #[test]
     fn test_basics() {
         let period = 1000;
@@ -358,13 +355,17 @@ mod tests {
 
         // Create a staking contract with account 0 as owner (perhaps Sputnikv2 contract)
         // with token accounts 1 and 4, 5 as example NFT token ids, NFT1 weighted 2, NFT4 weighted 7, NFT5 weighted 0 (for error checking).
-        let mut nft_ids_and_weights = UnorderedMap::new(StorageKeys::NFTs);
+
         let nft1 = accounts(1);
         let nft4 = accounts(4);
         let nft5 = accounts(5);
-        nft_ids_and_weights.insert(&nft1.to_string(), &U128(2));
-        nft_ids_and_weights.insert(&nft4.to_string(), &U128(7));
-        nft_ids_and_weights.insert(&nft5.to_string(), &U128(0));
+        let nft_ids_and_weights: BTreeMap<_, _> = vec![
+            (nft1.to_string(), U128(2)),
+            (nft1.to_string(), U128(7)),
+            (nft1.to_string(), U128(0)),
+        ]
+        .into_iter()
+        .collect();
 
         let mut contract = Contract::new(accounts(0), nft_ids_and_weights, U64(period));
 
@@ -439,8 +440,8 @@ mod tests {
         //Switch to using account 0
         testing_env!(context.predecessor_account_id(accounts(0)).build());
         let nft6 = "NFT_6".to_string();
-        let mut new_tokens_with_weights = UnorderedMap::new(StorageKeys::NFTs);
-        new_tokens_with_weights.insert(&nft6, &U128(22));
+        let mut new_tokens_with_weights = BTreeMap::new();
+        new_tokens_with_weights.insert(nft6.clone(), U128(22));
         contract.adopt_new_nfts(new_tokens_with_weights);
 
         assert_eq!(
@@ -457,11 +458,11 @@ mod tests {
         testing_env!(context.predecessor_account_id(accounts(2)).build());
 
         // account 2 can't singlehandedly adopt an nft
-        let result = catch_unwind(|| { 
-            let mut contract = Contract::new(accounts(0), UnorderedMap::new(StorageKeys::NFTs), U64(period));
+        let result = catch_unwind(|| {
+            let mut contract = Contract::new(accounts(0), BTreeMap::default(), U64(period));
             let nft7 = "NFT_7".to_string();
-            let mut new_tokens_with_weights_err = UnorderedMap::new(StorageKeys::NFTs);
-            new_tokens_with_weights_err.insert(&nft7, &U128(22));
+            let mut new_tokens_with_weights_err = BTreeMap::new();
+            new_tokens_with_weights_err.insert(nft7, U128(22));
             contract.adopt_new_nfts(new_tokens_with_weights_err);
         });
 
@@ -470,5 +471,4 @@ mod tests {
         // Check that a next_action_timestamp exists
         assert_eq!(user.next_action_timestamp, U64(period));
     }
-
 }
