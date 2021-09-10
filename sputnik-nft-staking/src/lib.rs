@@ -333,6 +333,8 @@ impl NonFungibleTokenReceiver for Contract {
 
 #[cfg(test)]
 mod tests {
+    use std::panic::catch_unwind;
+
     use near_contract_standards::storage_management::StorageManagement;
     use near_sdk::json_types::U64;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
@@ -345,7 +347,6 @@ mod tests {
     #[derive(BorshStorageKey, BorshSerialize)]
     enum StorageKeys {
         NFTs,
-        VoteWeights,
     }
     #[test]
     fn test_basics() {
@@ -357,20 +358,15 @@ mod tests {
 
         // Create a staking contract with account 0 as owner (perhaps Sputnikv2 contract)
         // with token accounts 1 and 4, 5 as example NFT token ids, NFT1 weighted 2, NFT4 weighted 7, NFT5 weighted 0 (for error checking).
-        let mut nft_ids = UnorderedSet::new(StorageKeys::NFTs);
+        let mut nft_ids_and_weights = UnorderedMap::new(StorageKeys::NFTs);
         let nft1 = accounts(1);
         let nft4 = accounts(4);
         let nft5 = accounts(5);
-        nft_ids.insert(&nft1.to_string());
-        nft_ids.insert(&nft4.to_string());
-        nft_ids.insert(&nft5.to_string());
+        nft_ids_and_weights.insert(&nft1.to_string(), &U128(2));
+        nft_ids_and_weights.insert(&nft4.to_string(), &U128(7));
+        nft_ids_and_weights.insert(&nft5.to_string(), &U128(0));
 
-        let mut vote_weights = LookupMap::new(StorageKeys::VoteWeights);
-        vote_weights.insert(&nft1.to_string(), &U128(2));
-        vote_weights.insert(&nft4.to_string(), &U128(7));
-        vote_weights.insert(&nft5.to_string(), &U128(0));
-
-        let mut contract = Contract::new(accounts(0), nft_ids, U64(period), vote_weights);
+        let mut contract = Contract::new(accounts(0), nft_ids_and_weights, U64(period));
 
         // Store 1 yoctoⓃ per user testing account for storage deposit
         testing_env!(context.attached_deposit(to_yocto("1")).build());
@@ -438,7 +434,41 @@ mod tests {
             2
         );
 
+        //Approve additional nft, only if predecessor is owner.
+
+        //Switch to using account 0
+        testing_env!(context.predecessor_account_id(accounts(0)).build());
+        let nft6 = "NFT_6".to_string();
+        let mut new_tokens_with_weights = UnorderedMap::new(StorageKeys::NFTs);
+        new_tokens_with_weights.insert(&nft6, &U128(22));
+        contract.adopt_new_nfts(new_tokens_with_weights);
+
+        assert_eq!(
+            contract
+                .token_ids_with_vote_weights
+                .get(&nft6.to_string())
+                .unwrap()
+                .0,
+            22,
+            "Token added improperly."
+        );
+
+        //Switch to using account 2
+        testing_env!(context.predecessor_account_id(accounts(2)).build());
+
+        // account 2 can't singlehandedly adopt an nft
+        let result = catch_unwind(|| { 
+            let mut contract = Contract::new(accounts(0), UnorderedMap::new(StorageKeys::NFTs), U64(period));
+            let nft7 = "NFT_7".to_string();
+            let mut new_tokens_with_weights_err = UnorderedMap::new(StorageKeys::NFTs);
+            new_tokens_with_weights_err.insert(&nft7, &U128(22));
+            contract.adopt_new_nfts(new_tokens_with_weights_err);
+        });
+
+        assert!(result.is_err(), "nft adopted when it shouldn't");
+
         // Check that a next_action_timestamp exists
         assert_eq!(user.next_action_timestamp, U64(period));
     }
+
 }
