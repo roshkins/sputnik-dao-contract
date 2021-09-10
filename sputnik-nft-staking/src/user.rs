@@ -2,7 +2,7 @@ use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::env::sha256;
 use near_sdk::json_types::{U128, U64};
 use near_sdk::{env, AccountId, Balance, Duration, StorageUsage};
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use crate::*;
 
@@ -27,8 +27,8 @@ pub struct User {
     /// List of delegations by token to other accounts.
     /// (AccountId, TokenId, VoteWeight: U128)
     pub delegated_amounts: Vec<(AccountId, String, U128)>,
-    /// Number of votes a given NFT has.
-    pub token_vote_weights: &LookupMap<String, U128>,
+    
+    account_hash: Vec<u8>,
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
@@ -41,26 +41,27 @@ impl Serialize for User {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_u128(self.get_vote_amount())
+        //TODO: Put something more meaningful here.
+        serializer.serialize_bytes(&self.account_hash)
     }
 }
 
 impl User{
-    pub fn new(account_id: &AccountId, near_amount: Balance, token_vote_weights: &LookupMap<String, U128>) -> Self {
+    pub fn new(account_id: &AccountId, near_amount: Balance) -> Self {
         let mut vote_amounts_prefix = sha256(account_id.as_bytes());
         let mut vote_amounts_bytes = vec![b'v', b'a'];
         vote_amounts_prefix.append(&mut vote_amounts_bytes);
         Self {
             storage_used: Self::min_storage(),
             near_amount: U128(near_amount),
-            vote_amounts: UnorderedMap::new(vote_amounts_prefix),
+            vote_amounts: UnorderedMap::new(vote_amounts_prefix.clone()),
             delegated_amounts: vec![],
             next_action_timestamp: 0.into(),
-            token_vote_weights: (token_vote_weights),
+            account_hash:vote_amounts_prefix.clone()
         }
     }
 
-    pub fn get_vote_amount(&self) -> u128 {
+    pub fn get_vote_amount(&self, token_vote_weights: &LookupMap<String,U128>) -> u128 {
         let mut sum = 0;
         for (token_id, amount) in self.vote_amounts.iter() {
             let mut delegated = false;
@@ -72,7 +73,7 @@ impl User{
             if delegated {
                 continue;
             }
-            sum += amount.0 * &self.token_vote_weights.get(&token_id).unwrap().0;
+            sum += amount.0 * &token_vote_weights.get(&token_id).unwrap().0;
         }
         sum
     }
@@ -122,6 +123,7 @@ impl User{
         self.storage_used += delegate_id.as_bytes().len() as StorageUsage + U128_LEN;
         self.delegated_amounts
             .push((delegate_id, token_id, U128(amount)));
+        
         self.assert_storage();
     }
 
@@ -214,7 +216,7 @@ impl Contract {
 
     /// Internal register new user.
     pub fn internal_register_user(&mut self, sender_id: &AccountId, near_amount: Balance) {
-        let user = User::new(&sender_id, near_amount, &self.token_vote_weights);
+        let user = User::new(&sender_id, near_amount);
         self.save_user(sender_id, user);
         ext_sputnik::register_delegation(
             sender_id.clone(),
