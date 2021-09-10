@@ -2,7 +2,7 @@ use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::env::sha256;
 use near_sdk::json_types::{U128, U64};
 use near_sdk::{env, AccountId, Balance, Duration, StorageUsage};
-use serde::{Serialize, Serializer};
+use serde::{Serialize};
 
 use crate::*;
 
@@ -61,7 +61,7 @@ impl User{
         }
     }
 
-    pub fn get_vote_amount(&self, token_vote_weights: &LookupMap<String,U128>) -> u128 {
+    pub fn get_vote_amount(&self, token_vote_weights: &UnorderedMap<String,U128>) -> u128 {
         let mut sum = 0;
         for (token_id, amount) in self.vote_amounts.iter() {
             let mut delegated = false;

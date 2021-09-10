@@ -4,7 +4,7 @@ use near_contract_standards::non_fungible_token::core::NonFungibleTokenReceiver;
 use near_contract_standards::non_fungible_token::TokenId;
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::collections::{LookupMap, UnorderedMap, UnorderedSet};
+use near_sdk::collections::{LookupMap, UnorderedMap};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::{
     env, ext_contract, near_bindgen, AccountId, Balance, BorshStorageKey, Duration, Gas,
@@ -125,15 +125,13 @@ pub struct Contract {
     /// DAO owner of this staking contract.
     owner_id: AccountId,
     /// Vote token account.
-    vote_token_ids: UnorderedSet<String>,
+    token_ids_with_vote_weights: UnorderedMap<String, U128>,
     /// Recording user deposits.
     users: LookupMap<AccountId, VersionedUser>,
     /// Total token amount deposited per token.
     total_amount: UnorderedMap<String, Balance>,
     /// Duration of unstaking. Should be over the possible voting periods.
     unstake_period: Duration,
-    /// Number of votes a given NFT has.
-    token_vote_weights: LookupMap<String, U128>,
 }
 
 #[ext_contract(ext_self)]
@@ -152,19 +150,27 @@ impl Contract {
     #[init]
     pub fn new(
         #[serializer(borsh)] owner_id: AccountId,
-        #[serializer(borsh)] token_ids: UnorderedSet<String>,
+        #[serializer(borsh)] token_ids_with_vote_weights: UnorderedMap<String, U128>,
         #[serializer(borsh)] unstake_period: U64,
         //TODO: Optimize storage, see: https://stackoverflow.com/questions/69096013/how-can-i-serialize-a-near-sdk-rs-lookupmap-that-uses-a-string-as-a-key-or-is-t
-        #[serializer(borsh)] token_vote_weights: LookupMap<String, U128>,
     ) -> Self {
         Self {
             owner_id: owner_id.into(),
-            vote_token_ids: token_ids,
+            token_ids_with_vote_weights,
             users: LookupMap::new(StorageKeys::Users),
             total_amount: UnorderedMap::new(StorageKeys::ValidNFTs),
             unstake_period: unstake_period.0,
-            token_vote_weights,
         }
+    }
+
+    pub fn adopt_new_nfts(
+        &mut self,
+        #[serializer(borsh)] token_ids_and_weights: UnorderedMap<String, U128>,
+    ) {
+        let sender_id = env::predecessor_account_id();
+        assert!(sender_id == self.owner_id, "ERR_INVALID_APPROVER");
+        self.token_ids_with_vote_weights
+            .extend(token_ids_and_weights.iter());
     }
 
     /// Total number of tokens staked in this contract.
@@ -180,7 +186,12 @@ impl Contract {
     pub fn total_voting_power(&self) -> U128 {
         let mut sum = 0;
         for i in self.total_amount.iter() {
-            sum += i.1 * self.token_vote_weights.get(&i.0).unwrap_or(U128(0)).0;
+            sum += i.1
+                * self
+                    .token_ids_with_vote_weights
+                    .get(&i.0)
+                    .unwrap_or(U128(0))
+                    .0;
         }
         U128(sum)
     }
@@ -214,7 +225,7 @@ impl Contract {
             U128(
                 amount.0
                     * self
-                        .token_vote_weights
+                        .token_ids_with_vote_weights
                         .get(&token_id.clone())
                         .unwrap_or(U128(0))
                         .0,
@@ -239,7 +250,7 @@ impl Contract {
             U128(
                 amount.0
                     * self
-                        .token_vote_weights
+                        .token_ids_with_vote_weights
                         .get(&token_id.clone())
                         .unwrap_or(U128(0))
                         .0,
@@ -308,8 +319,9 @@ impl NonFungibleTokenReceiver for Contract {
         msg: String,
     ) -> PromiseOrValue<bool> {
         assert!(
-            self.vote_token_ids
-                .contains(&env::predecessor_account_id().as_str().to_string()),
+            self.token_ids_with_vote_weights
+                .get(&env::predecessor_account_id().as_str().to_string())
+                != None,
             "ERR_INVALID_TOKEN"
         );
         assert!(msg.is_empty(), "ERR_INVALID_MESSAGE");
@@ -384,7 +396,10 @@ mod tests {
         assert_eq!(contract.total_voting_power().0, 9);
 
         let user = contract.get_user(accounts(2));
-        assert_eq!(user.get_vote_amount(&contract.token_vote_weights),9);
+        assert_eq!(
+            user.get_vote_amount(&contract.token_ids_with_vote_weights),
+            9
+        );
         // Switch to account 2
         testing_env!(context.predecessor_account_id(accounts(2)).build());
 
@@ -395,16 +410,18 @@ mod tests {
 
         // Check voting count went down.
         assert_eq!(contract.total_voting_power().0, 2);
-        assert_eq!(user.get_vote_amount(&contract.token_vote_weights),2);
+        assert_eq!(
+            user.get_vote_amount(&contract.token_ids_with_vote_weights),
+            2
+        );
 
-    
         // Delegate voting nft to account 3
         contract.delegate(accounts(3), nft1.to_string(), U128(1));
 
         // See that user2 has delegated nft1
         let user = contract.get_user(accounts(2));
         assert_eq!(user.delegated_amount(nft1.to_string()), 1);
-        
+
         // Switch to account 2
         // testing_env!(context.predecessor_account_id(accounts(2)).build());
 
@@ -416,10 +433,12 @@ mod tests {
         assert_eq!(user.delegated_amount(nft1.to_string()), 0);
 
         // User 2 has correct voting power.
-        assert_eq!(user.get_vote_amount(&contract.token_vote_weights), 2);
+        assert_eq!(
+            user.get_vote_amount(&contract.token_ids_with_vote_weights),
+            2
+        );
 
-    
         // Check that a next_action_timestamp exists
-        assert_eq!(user.next_action_timestamp, U64(period)); 
+        assert_eq!(user.next_action_timestamp, U64(period));
     }
 }

@@ -126,7 +126,7 @@ fn test_create_dao_and_use_nft() {
         to_yocto("10")
     );
     assert_eq!(
-        view!(test_nft.ft_balance_of(user2_id.clone()))
+        view!(test_nft.nft_balance_of(user2_id.clone()))
             .unwrap_json::<U128>()
             .0,
         to_yocto("90")

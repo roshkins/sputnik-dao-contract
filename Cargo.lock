@@ -2576,6 +2576,7 @@ dependencies = [
  "near-contract-standards",
  "near-sdk",
  "near-sdk-sim",
+ "sputnik-nft-staking",
  "sputnik-staking",
  "test-nft",
  "test-token",

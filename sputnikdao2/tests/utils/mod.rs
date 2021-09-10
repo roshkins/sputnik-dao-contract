@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 use std::convert::TryFrom;
 
+use near_sdk::collections::UnorderedSet;
+use near_sdk::env::sha256;
 pub use near_sdk::json_types::{Base64VecU8, U64};
 use near_sdk::{AccountId, Balance};
 use near_sdk_sim::transaction::ExecutionStatus;
@@ -10,6 +12,7 @@ use near_sdk_sim::{
 
 use near_sdk::json_types::U128;
 use sputnik_staking::ContractContract as StakingContract;
+use sputnik_nft_staking::ContractContract as NFTStakingContract;
 use sputnikdao2::{
     Action, Config, ContractContract as DAOContract, ProposalInput, ProposalKind, VersionedPolicy,
 };
@@ -22,6 +25,7 @@ near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
     TEST_TOKEN_WASM_BYTES => "../test-token/res/test_token.wasm",
     TEST_NFT_WASM_BYTES => "../test-nft/res/test_nft.wasm",
     STAKING_WASM_BYTES => "../sputnik-staking/res/sputnik_staking.wasm",
+    NFT_STAKING_WASM_BYTES => "../sputnik-nft-staking/res/sputnik_nft_staking.wasm",
 }
 
 type Contract = ContractAccount<DAOContract>;
@@ -89,13 +93,23 @@ pub fn setup_staking(root: &UserAccount) -> ContractAccount<StakingContract> {
 }
 
 pub fn setup_staking_nft(root: &UserAccount) -> ContractAccount<StakingContract> {
+
+    let dao_nfts = UnorderedSet::new(sha256(root.account_id().as_bytes() + "nft".as_bytes()));
+    dao_nfts.insert("dao_nft_1");
+    dao_nfts.insert("dao_nft_2");
+
     deploy!(
-        contract: StakingContract,
-        contract_id: "staking".to_string(),
-        bytes: &STAKING_WASM_BYTES,
+        contract: NFTStakingContract,
+        contract_id: "nft_staking".to_string(),
+        bytes: &NFT_STAKING_WASM_BYTES,
         signer_account: root,
         deposit: to_yocto("100"),
-        init_method: new("dao".parse().unwrap(), "test_nft".to_string(), U64(100_000_000_000))
+        init_method:new(
+            "dao".parse().unwrap(),
+           token_ids: UnorderedSet<String>,
+            U64(100_000_000_000),
+            token_vote_weights: LookupMap<String, U128>,
+        ) )
     )
 }
 

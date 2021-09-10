@@ -67,7 +67,7 @@ impl StorageManagement for Contract {
         let account_id = env::predecessor_account_id();
         if let Some(user) = self.internal_get_user_opt(&account_id) {
             // TODO: figure out force option logic.
-            assert!(user.get_vote_amount(&self.token_vote_weights) > 0, "ERR_STORAGE_UNREGISTER_NOT_EMPTY");
+            assert!(user.get_vote_amount(&self.token_ids_with_vote_weights) > 0, "ERR_STORAGE_UNREGISTER_NOT_EMPTY");
             self.users.remove(&account_id);
             Promise::new(account_id.clone()).transfer(user.near_amount.0);
             true
