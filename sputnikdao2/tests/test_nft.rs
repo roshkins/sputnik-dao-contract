@@ -1,23 +1,27 @@
-use std::collections::HashMap;
 
+
+use near_contract_standards::non_fungible_token::Token;
 use near_sdk::json_types::U128;
 use near_sdk::AccountId;
 use near_sdk_sim::{call, to_yocto, view};
 
 use crate::utils::*;
-use sputnik_staking::User;
+use sputnik_nft_staking::User;
 use sputnikdao2::{
     Action, Policy, Proposal, ProposalInput, ProposalKind, ProposalStatus, RoleKind,
     RolePermission, VersionedPolicy, VotePolicy,
 };
 
-use test_nft::Contract;
+
 
 mod utils;
 
 fn user(id: u32) -> AccountId {
     format!("user{}", id).parse().unwrap()
 }
+
+
+const TEST_NFT: &str = "TEST_NFT";
 
 #[test]
 fn test_create_dao_and_use_nft() {
@@ -76,22 +80,26 @@ fn test_create_dao_and_use_nft() {
         ProposalStatus::Approved
     );
 
+    // Test staking, starting with a zero amount staked.
     staking
         .user_account
-        .view_method_call(staking.contract.ft_total_supply());
+        .view_method_call(staking.contract.nft_total_supply());
     assert_eq!(
-        view!(staking.ft_total_supply()).unwrap_json::<U128>().0,
+        view!(staking.nft_total_supply()).unwrap_json::<U128>().0,
         to_yocto("0")
     );
+
+    // Mint nft TEST_NFT and give to to user2
     call!(
         user2,
         test_nft.nft_mint(
-            "test_nft".to_string(),
+            TEST_NFT.to_string(),
             user2.account_id.clone(),
             test_nft::tests.sample_token_metadata()
         )
     )
     .assert_success();
+    // Deposit storage cost to staking contract
     call!(
         user2,
         test_nft.storage_deposit(Some(staking.account_id()), None),
@@ -103,74 +111,82 @@ fn test_create_dao_and_use_nft() {
         staking.storage_deposit(None, None),
         deposit = to_yocto("1")
     );
+
+    // Transfer nft to staking contract.
     call!(
         user2,
-        test_nft.ft_transfer_call(
+        test_nft.nft_transfer_call(
             staking.account_id(),
-            U128(to_yocto("10")),
+            TEST_NFT.to_string(),
+            None,
             None,
             "".to_string()
         ),
         deposit = 1
     )
     .assert_success();
-    assert_eq!(
-        view!(staking.ft_total_supply()).unwrap_json::<U128>().0,
-        to_yocto("10")
-    );
+
+    //NFT should be in contract
+    assert_eq!(view!(staking.nft_total_supply()).unwrap_json::<U128>().0, 1);
+
+    // Check user2's balance went up on staking contract
     let user2_id = user2.account_id.clone();
     assert_eq!(
-        view!(staking.ft_balance_of(user2_id.clone()))
+        view!(staking.nft_balance_of(user2_id.clone()))
             .unwrap_json::<U128>()
             .0,
-        to_yocto("10")
+        1
     );
+
+    // Ownership of NFT should transfer
     assert_eq!(
-        view!(test_nft.nft_balance_of(user2_id.clone()))
-            .unwrap_json::<U128>()
-            .0,
-        to_yocto("90")
+        view!(test_nft.nft_token(TEST_NFT.to_))
+            .wrap_json::<Token>()
+            .owner_id,
+        staking.account_id()
     );
-    call!(user2, staking.withdraw(U128(to_yocto("5")))).assert_success();
+
+    // Withdraw the NFT back.
+    call!(user2, staking.withdraw(TEST_NFT)).assert_success();
+    assert_eq!(view!(staking.nft_total_supply()).unwrap_json::<U128>().0, 0);
     assert_eq!(
-        view!(staking.ft_total_supply()).unwrap_json::<U128>().0,
-        to_yocto("5")
+        view!(test_nft.nft_token(TEST_NFT))
+            .wrap_json::<Token>()
+            .owner_id,
+        user2_id.clone()
     );
-    assert_eq!(
-        view!(test_nft.ft_balance_of(user2_id.clone()))
-            .unwrap_json::<U128>()
-            .0,
-        to_yocto("95")
-    );
+
+    // Can delegate token to self
     call!(
         user2,
-        staking.delegate(user2_id.clone(), U128(to_yocto("5")))
+        staking.delegate(user2_id.clone(), NFT_TOKEN.to_string(), U128(1))
     )
     .assert_success();
     call!(
         user2,
-        staking.undelegate(user2_id.clone(), U128(to_yocto("1")))
+        staking.undelegate(user2_id.clone(), NFT_TOKEN.to_string(), U128(1))
     )
     .assert_success();
     // should fail right after undelegation as need to wait for voting period before can delegate again.
     should_fail(call!(
         user2,
-        staking.delegate(user2_id.clone(), U128(to_yocto("1")))
+        staking.delegate(user2_id.clone(), NFT_TOKEN.to_string(), U128(1))
     ));
+
     let user = view!(staking.get_user(user2_id.clone())).unwrap_json::<User>();
     assert_eq!(
         user.delegated_amounts,
-        vec![(user2_id.clone(), U128(to_yocto("4")))]
+        vec![]
     );
     assert_eq!(
         view!(dao.delegation_total_supply()).unwrap_json::<U128>().0,
-        to_yocto("4")
+        0
     );
     assert_eq!(
         view!(dao.delegation_balance_of(user2_id.clone()))
             .unwrap_json::<U128>()
             .0,
-        to_yocto("4")
+        0
     );
 }
 

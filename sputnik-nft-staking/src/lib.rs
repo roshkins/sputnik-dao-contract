@@ -200,7 +200,7 @@ impl Contract {
     pub fn nft_balance_of(&self, account_id: AccountId) -> U128 {
         let mut sum = 0;
         for i in self.internal_get_user(&account_id).vote_amounts.iter() {
-            sum += i.1 .0; //Get second field, then get unwrapped number.
+            sum += i.1.0; //Get second field, then get unwrapped number.
         }
         U128(sum)
     }
@@ -457,8 +457,12 @@ mod tests {
         testing_env!(context.predecessor_account_id(accounts(2)).build());
 
         // account 2 can't singlehandedly adopt an nft
-        let result = catch_unwind(|| { 
-            let mut contract = Contract::new(accounts(0), UnorderedMap::new(StorageKeys::NFTs), U64(period));
+        let result = catch_unwind(|| {
+            let mut contract = Contract::new(
+                accounts(0),
+                UnorderedMap::new(StorageKeys::NFTs),
+                U64(period),
+            );
             let nft7 = "NFT_7".to_string();
             let mut new_tokens_with_weights_err = UnorderedMap::new(StorageKeys::NFTs);
             new_tokens_with_weights_err.insert(&nft7, &U128(22));
@@ -470,5 +474,4 @@ mod tests {
         // Check that a next_action_timestamp exists
         assert_eq!(user.next_action_timestamp, U64(period));
     }
-
 }
