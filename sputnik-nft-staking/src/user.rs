@@ -2,7 +2,7 @@ use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::env::sha256;
 use near_sdk::json_types::{U128, U64};
 use near_sdk::{env, AccountId, Balance, Duration, StorageUsage};
-use serde::{Serialize};
+use serde::Serialize;
 
 use crate::*;
 
@@ -14,7 +14,7 @@ const ACCOUNT_MAX_LENGTH: StorageUsage = 64;
 /// Recording deposited voting tokens, storage used and delegations for voting.
 /// Once delegated - the tokens are used in the votes. It records for each delegate when was the last vote.
 /// When undelegating - the new delegations or withdrawal are only available after cooldown period from last vote of the delegate.
-#[derive(BorshSerialize, BorshDeserialize /* Debug */)]
+#[derive(BorshSerialize, BorshDeserialize, /* Debug */)]
 pub struct User {
     /// Total amount of storage used by this user struct.
     pub storage_used: StorageUsage,
@@ -31,20 +31,19 @@ pub struct User {
     account_hash: Vec<u8>,
 }
 
+impl Serialize for User {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        serializer.serialize_bytes(&self.account_hash.clone())
+    }
+}
+
 #[derive(BorshSerialize, BorshDeserialize)]
 pub enum VersionedUser {
     Default(User),
 }
 
-impl Serialize for User {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        //TODO: Put something more meaningful here.
-        serializer.serialize_bytes(&self.account_hash)
-    }
-}
 
 impl User{
     pub fn new(account_id: &AccountId, near_amount: Balance) -> Self {

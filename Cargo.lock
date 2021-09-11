@@ -2578,7 +2578,7 @@ dependencies = [
  "near-sdk-sim",
  "sputnik-nft-staking",
  "sputnik-staking",
- "test-nft",
+ "test-nft-token",
  "test-token",
 ]
 
@@ -2689,7 +2689,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "test-nft"
+name = "test-nft-token"
 version = "0.1.0"
 dependencies = [
  "near-contract-standards",

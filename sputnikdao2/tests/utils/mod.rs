@@ -18,13 +18,13 @@ use sputnik_staking::ContractContract as StakingContract;
 use sputnikdao2::{
     Action, Config, ContractContract as DAOContract, ProposalInput, ProposalKind, VersionedPolicy,
 };
-use test_nft::ContractContract as TestNFTContract;
+use test_nft_token::ContractContract as TestNFTContract;
 use test_token::ContractContract as TestTokenContract;
 
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
     DAO_WASM_BYTES => "res/sputnikdao2.wasm",
     TEST_TOKEN_WASM_BYTES => "../test-token/res/test_token.wasm",
-    TEST_NFT_WASM_BYTES => "../test-nft/res/test_nft.wasm",
+    TEST_NFT_WASM_BYTES => "../test-nft-token/res/test_nft.wasm",
     STAKING_WASM_BYTES => "../sputnik-staking/res/sputnik_staking.wasm",
     NFT_STAKING_WASM_BYTES => "../sputnik-nft-staking/res/sputnik_nft_staking.wasm",
 }
