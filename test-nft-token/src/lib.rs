@@ -95,7 +95,8 @@ impl Contract {
         token_owner_id: AccountId,
         token_metadata: TokenMetadata,
     ) -> Token {
-        self.tokens.mint(token_id, token_owner_id, Some(token_metadata))
+        self.tokens
+            .mint(token_id, token_owner_id, Some(token_metadata))
     }
 }
 
@@ -107,6 +108,24 @@ near_contract_standards::impl_non_fungible_token_enumeration!(Contract, tokens);
 impl NonFungibleTokenMetadataProvider for Contract {
     fn nft_metadata(&self) -> NFTContractMetadata {
         self.metadata.get().unwrap()
+    }
+}
+
+/// Create sample metadata for NFT
+pub fn sample_token_metadata() -> TokenMetadata {
+    TokenMetadata {
+        title: Some("Olympus Mons".into()),
+        description: Some("The tallest mountain in the charted solar system".into()),
+        media: None,
+        media_hash: None,
+        copies: Some(1u64),
+        issued_at: None,
+        expires_at: None,
+        starts_at: None,
+        updated_at: None,
+        extra: None,
+        reference: None,
+        reference_hash: None,
     }
 }
 
@@ -126,23 +145,6 @@ mod tests {
             .signer_account_id(predecessor_account_id.clone())
             .predecessor_account_id(predecessor_account_id);
         builder
-    }
-
-    pub fn sample_token_metadata() -> TokenMetadata {
-        TokenMetadata {
-            title: Some("Olympus Mons".into()),
-            description: Some("The tallest mountain in the charted solar system".into()),
-            media: None,
-            media_hash: None,
-            copies: Some(1u64),
-            issued_at: None,
-            expires_at: None,
-            starts_at: None,
-            updated_at: None,
-            extra: None,
-            reference: None,
-            reference_hash: None,
-        }
     }
 
     #[test]

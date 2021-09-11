@@ -1,5 +1,5 @@
 [package]
-name = "test-nft"
+name = "test-nft-token"
 version = "0.1.0"
 authors = ["Illia Polosukhin <illia.polosukhin@gmail.com>", "Rashi Abramson <roshkins@gmail.com>"]
 edition = "2018"

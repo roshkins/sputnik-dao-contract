@@ -1,12 +1,16 @@
 
-
 use near_contract_standards::non_fungible_token::Token;
 use near_sdk::json_types::U128;
 use near_sdk::AccountId;
-use near_sdk_sim::{call, to_yocto, view};
+use near_sdk_sim::{ContractAccount, call, to_yocto, view};
+use test_nft_token::ContractContract as TestNFTContract;
+use test_nft_token::sample_token_metadata;
+use sputnik_nft_staking::ContractContract as NFTStakingContract;
+
 
 use crate::utils::*;
 use sputnik_nft_staking::User;
+
 use sputnikdao2::{
     Action, Policy, Proposal, ProposalInput, ProposalKind, ProposalStatus, RoleKind,
     RolePermission, VersionedPolicy, VotePolicy,
@@ -23,13 +27,15 @@ fn user(id: u32) -> AccountId {
 
 const TEST_NFT: &str = "TEST_NFT";
 
+
 #[test]
 fn test_create_dao_and_use_nft() {
     let (root, dao) = setup_dao();
     let user2 = root.create_user(user(2), to_yocto("1000"));
     let user3 = root.create_user(user(3), to_yocto("1000"));
-    let test_nft = setup_test_nft(&root);
-    let staking = setup_staking_nft(&root);
+use crate::utils::*;
+    let test_nft: ContractAccount<TestNFTContract> = setup_test_nft(&root);
+    let staking: ContractAccount<NFTStakingContract> = setup_staking_nft(&root);
 
     assert!(view!(dao.get_staking_contract())
         .unwrap_json::<String>()
@@ -90,28 +96,17 @@ fn test_create_dao_and_use_nft() {
     );
 
     // Mint nft TEST_NFT and give to to user2
-    call!(
-        user2,
+     call!(
+        root,
         test_nft.nft_mint(
             TEST_NFT.to_string(),
             user2.account_id.clone(),
-            test_nft::tests.sample_token_metadata()
-        )
+            sample_token_metadata()
+        ),
+       deposit = 6220000000000000000000
     )
     .assert_success();
-    // Deposit storage cost to staking contract
-    call!(
-        user2,
-        test_nft.storage_deposit(Some(staking.account_id()), None),
-        deposit = to_yocto("1")
-    )
-    .assert_success();
-    call!(
-        user2,
-        staking.storage_deposit(None, None),
-        deposit = to_yocto("1")
-    );
-
+    
     // Transfer nft to staking contract.
     call!(
         user2,
@@ -140,18 +135,18 @@ fn test_create_dao_and_use_nft() {
 
     // Ownership of NFT should transfer
     assert_eq!(
-        view!(test_nft.nft_token(TEST_NFT.to_))
-            .wrap_json::<Token>()
+        view!(test_nft.nft_token(TEST_NFT.to_string()))
+            .unwrap_json::<Token>()
             .owner_id,
         staking.account_id()
     );
 
     // Withdraw the NFT back.
-    call!(user2, staking.withdraw(TEST_NFT)).assert_success();
+    call!(user2, staking.withdraw(TEST_NFT.to_string(), U128(1))).assert_success();
     assert_eq!(view!(staking.nft_total_supply()).unwrap_json::<U128>().0, 0);
     assert_eq!(
-        view!(test_nft.nft_token(TEST_NFT))
-            .wrap_json::<Token>()
+        view!(test_nft.nft_token(TEST_NFT.to_string()))
+            .unwrap_json::<Token>()
             .owner_id,
         user2_id.clone()
     );
@@ -159,21 +154,21 @@ fn test_create_dao_and_use_nft() {
     // Can delegate token to self
     call!(
         user2,
-        staking.delegate(user2_id.clone(), NFT_TOKEN.to_string(), U128(1))
+        staking.delegate(user2_id.clone(), TEST_NFT.to_string(), U128(1))
     )
     .assert_success();
     call!(
         user2,
-        staking.undelegate(user2_id.clone(), NFT_TOKEN.to_string(), U128(1))
+        staking.undelegate(user2_id.clone(), TEST_NFT.to_string(), U128(1))
     )
     .assert_success();
     // should fail right after undelegation as need to wait for voting period before can delegate again.
     should_fail(call!(
         user2,
-        staking.delegate(user2_id.clone(), NFT_TOKEN.to_string(), U128(1))
+        staking.delegate(user2_id.clone(), TEST_NFT.to_string(), U128(1))
     ));
 
-    let user = view!(staking.get_user(user2_id.clone())).unwrap_json::<User>();
+    let user = view!(staking.get_user(user2_id.clone())).unwrap_borsh::<User>();
     assert_eq!(
         user.delegated_amounts,
         vec![]
