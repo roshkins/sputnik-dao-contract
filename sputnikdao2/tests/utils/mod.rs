@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
 use near_sdk::collections::UnorderedMap;
@@ -94,10 +95,8 @@ pub fn setup_staking(root: &UserAccount) -> ContractAccount<StakingContract> {
 }
 
 pub fn setup_staking_nft(root: &UserAccount) -> ContractAccount<NFTStakingContract> {
-    let dao_nfts: UnorderedMap<String, U128> = UnorderedMap::new(sha256(
-        &[root.account_id().as_bytes().clone(), "staking".as_bytes()].concat(),
-    ));
-
+    let dao_nfts: BTreeMap<String, U128> = BTreeMap::new();
+    dao_nfts.insert("TEST_NFT_1".to_string(),4);
     deploy!(
     contract: NFTStakingContract,
     contract_id: "nft_staking".to_string(),
