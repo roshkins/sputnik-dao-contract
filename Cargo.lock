@@ -1763,6 +1763,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "nft-staking-factory"
+version = "0.2.0"
+dependencies = [
+ "near-sdk",
+]
+
+[[package]]
 name = "nix"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

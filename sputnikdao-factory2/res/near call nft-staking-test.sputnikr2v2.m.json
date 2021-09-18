@@ -1,0 +1,10 @@
+near call nft-staking-test.sputnikr2v2.moopaloo.testnet add_proposal '{
+    "proposal": {
+        "description": "Adopt NFT staking contract",
+        "kind": {
+            "SetStakingContract": {
+                "staking_id": "nft-staking.moopaloo.testnet"
+            }
+        }
+    }
+}' --accountId moopaloo.testnet --amount 1
