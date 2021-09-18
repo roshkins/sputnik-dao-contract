@@ -1,0 +1,7 @@
+near call lcncryptosing.mintspace2.testnet  --args '{
+    "receiver_id": "stake-test.moopaloo.testnet",
+    "token_id": "108",
+    "approval_id": "0",
+    "memo": "",
+    "msg": ""
+}' --accountId morenear.testnet --depositYocto 1 --gas 300000000000000

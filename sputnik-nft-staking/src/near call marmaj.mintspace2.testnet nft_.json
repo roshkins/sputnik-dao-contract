@@ -1,0 +1,7 @@
+near call marmaj.mintspace2.testnet nft_transfer_call --args '{
+    "receiver_id": "test-dao-nft.stake-your-nfts.moopaloo.testnet",
+    "token_id": "7",
+    "approval_id": "0",
+    "memo": "",
+    "msg": ""
+}' --accountId morenear.testnet --depositYocto 1 --gas 300000000000000

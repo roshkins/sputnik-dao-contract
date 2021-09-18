@@ -1,0 +1,8 @@
+
+near call stake-test.moopaloo.testnet new --args '{
+    "owner_id": "test-dao-nft.stake-your-nfts.moopaloo.testnet",
+    "token_ids_with_vote_weights": {
+        "8": "1000"
+    },
+    "unstake_period": "1000000000"
+}' --accountId moopaloo.testnet

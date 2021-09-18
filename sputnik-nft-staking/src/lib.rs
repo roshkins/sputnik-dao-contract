@@ -167,6 +167,12 @@ impl Contract {
         }
     }
 
+    pub fn get_token_votes(&self) -> BTreeMap<String,U128>{
+        let mut tokens = BTreeMap::new();
+        tokens.extend(self.token_ids_with_vote_weights.iter());
+        tokens
+    }
+
     pub fn adopt_new_nfts(&mut self, token_ids_and_weights: BTreeMap<String, U128>) {
         let sender_id = env::predecessor_account_id();
         assert!(sender_id == self.owner_id, "ERR_INVALID_APPROVER");
@@ -320,7 +326,7 @@ impl NonFungibleTokenReceiver for Contract {
         msg: String,
     ) -> PromiseOrValue<bool> {
         assert!(
-            self.token_ids_with_vote_weights.get(&token_id.clone()) != None,
+            !self.token_ids_with_vote_weights.get(&token_id.clone()).is_none(),
             "ERR_INVALID_TOKEN"
         );
         assert!(msg.is_empty(), "ERR_INVALID_MESSAGE");
