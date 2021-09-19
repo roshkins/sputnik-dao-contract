@@ -1,0 +1,5 @@
+near call dev-1631986964290-87098930842940 nft_transfer_call '{
+    "receiver_id": "test-dao-nft-5.stake-your-nfts.moopaloo.testnet",
+    "token_id": "7",
+    "msg": ""
+}' --accountId morenear.testnet --depositYocto 1 --gas=300000000000000

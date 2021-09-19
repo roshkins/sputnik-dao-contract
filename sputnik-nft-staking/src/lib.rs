@@ -230,12 +230,7 @@ impl Contract {
         ext_sputnik::delegate(
             account_id.into(),
             U128(
-                amount.0
-                    * self
-                        .token_ids_with_vote_weights
-                        .get(&token_id.clone())
-                        .unwrap_or(U128(0))
-                        .0,
+                amount.0,
             ),
             self.owner_id.clone(),
             0,

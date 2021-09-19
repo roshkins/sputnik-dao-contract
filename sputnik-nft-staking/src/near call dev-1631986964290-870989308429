@@ -1,0 +1,2 @@
+near call dev-1631986964290-87098930842940 nft_transfer_call '{"sender_id": "morenear.testnet", "previous_owner_id": "morenear.testnet", "token_id": "7", "msg": ""}' --accountId dev-1631986964290-87098930842940
+near call dev-1631986964290-87098930842940 nft_transfer_call '{"receiver_id": "morenear.testnet", "token_id": "7", "msg": ""}' --accountId dev-1631986964290-87098930842940 --depositYocto 1
