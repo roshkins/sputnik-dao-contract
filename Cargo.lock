@@ -1767,6 +1767,7 @@ name = "nft-staking-factory"
 version = "0.2.0"
 dependencies = [
  "near-sdk",
+ "sputnik-nft-staking",
 ]
 
 [[package]]

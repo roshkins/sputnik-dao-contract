@@ -108,7 +108,7 @@ impl User{
     pub fn delegate(&mut self, delegate_id: AccountId, token_id: String, amount: Balance) {
         assert!(
             self.delegated_amount(token_id.clone()) + amount
-                <= self
+                < self
                     .vote_amounts
                     .get(&token_id.clone())
                     .unwrap_or(U128(0))
@@ -144,7 +144,7 @@ impl User{
             })
             .expect("ERR_NO_DELEGATE");
         let element = (f.0, ((f.1).2).0);
-        assert!(element.1 >= amount, "ERR_NOT_ENOUGH_AMOUNT");
+        assert!(element.1 > amount, "ERR_NOT_ENOUGH_AMOUNT");
         if element.1 == amount {
             self.delegated_amounts.remove(element.0);
             self.storage_used -= delegate_id.as_bytes().len() as StorageUsage + U128_LEN;

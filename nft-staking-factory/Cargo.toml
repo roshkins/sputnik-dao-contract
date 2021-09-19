@@ -10,3 +10,4 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 near-sdk = "4.0.0-pre.2"
+sputnik-nft-staking = { path = "../sputnik-nft-staking"}
