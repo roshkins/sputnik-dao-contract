@@ -1,10 +1,9 @@
-use std::convert::TryFrom;
-
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, near_bindgen, AccountId, Promise, PromiseOrValue};
 
+use crate::types::{convert_old_to_new_token, OldAccountId};
 use crate::*;
 
 /// Information recorded about claim of the bounty by given user.
@@ -29,7 +28,8 @@ pub struct Bounty {
     /// Description of the bounty.
     pub description: String,
     /// Token the bounty will be paid out.
-    pub token: AccountId,
+    /// Can be "" for $NEAR or a valid account id.
+    pub token: OldAccountId,
     /// Amount to be paid out.
     pub amount: U128,
     /// How many times this bounty can be done.
@@ -71,24 +71,16 @@ impl Contract {
         receiver_id: &AccountId,
         success: bool,
     ) -> PromiseOrValue<()> {
-        let mut bounty: Bounty = self.bounties.get(&id).expect("ERR_NO_BOUNTY").into();
-        let (claims, claim_idx) = self.internal_get_claims(id, &receiver_id);
-        self.internal_remove_claim(id, claims, claim_idx);
+        let bounty: Bounty = self.bounties.get(&id).expect("ERR_NO_BOUNTY").into();
+        self.internal_remove_claim(id, receiver_id);
         if success {
-            let res = self.internal_payout(
-                &bounty.token,
+            self.internal_payout(
+                &convert_old_to_new_token(&bounty.token),
                 receiver_id,
                 bounty.amount.0,
                 format!("Bounty {} payout", id),
                 None,
-            );
-            if bounty.times == 0 {
-                self.bounties.remove(&id);
-            } else {
-                bounty.times -= 1;
-                self.bounties.insert(&id, &VersionedBounty::Default(bounty));
-            }
-            res
+            )
         } else {
             PromiseOrValue::Value(())
         }
@@ -137,19 +129,20 @@ impl Contract {
         });
         self.bounty_claimers
             .insert(&env::predecessor_account_id(), &claims);
+        self.locked_amount += env::attached_deposit();
     }
 
-    /// Removes given claims from this bounty and user's claims.
-    fn internal_remove_claim(&mut self, id: u64, mut claims: Vec<BountyClaim>, claim_idx: usize) {
+    /// Remove the claim of `claimer_id` from this bounty.
+    fn internal_remove_claim(&mut self, bounty_id: u64, claimer_id: &AccountId) {
+        let (mut claims, claim_idx) = self.internal_get_claims(bounty_id, claimer_id);
         claims.remove(claim_idx);
         if claims.len() == 0 {
-            self.bounty_claimers.remove(&env::predecessor_account_id());
+            self.bounty_claimers.remove(claimer_id);
         } else {
-            self.bounty_claimers
-                .insert(&env::predecessor_account_id(), &claims);
+            self.bounty_claimers.insert(claimer_id, &claims);
         }
-        let count = self.bounty_claims_count.get(&id).unwrap() - 1;
-        self.bounty_claims_count.insert(&id, &count);
+        let count = self.bounty_claims_count.get(&bounty_id).unwrap() - 1;
+        self.bounty_claims_count.insert(&bounty_id, &count);
     }
 
     fn internal_get_claims(&mut self, id: u64, sender_id: &AccountId) -> (Vec<BountyClaim>, usize) {
@@ -166,13 +159,14 @@ impl Contract {
     /// Report that bounty is done. Creates a proposal to vote for paying out the bounty.
     /// Only creator of the claim can call `done` on bounty that is still in progress.
     /// On expired, anyone can call it to free up the claim slot.
+    #[payable]
     pub fn bounty_done(&mut self, id: u64, account_id: Option<AccountId>, description: String) {
         let sender_id = account_id.unwrap_or_else(|| env::predecessor_account_id());
         let (mut claims, claim_idx) = self.internal_get_claims(id, &sender_id);
         assert!(!claims[claim_idx].completed, "ERR_BOUNTY_CLAIM_COMPLETED");
         if env::block_timestamp() > claims[claim_idx].start_time.0 + claims[claim_idx].deadline.0 {
             // Expired. Nothing to do.
-            self.internal_remove_claim(id, claims, claim_idx);
+            self.internal_remove_claim(id, &sender_id);
         } else {
             // Still under deadline. Only the user themself can call this.
             assert_eq!(
@@ -184,7 +178,11 @@ impl Contract {
                 description,
                 kind: ProposalKind::BountyDone {
                     bounty_id: id,
+<<<<<<< HEAD
                     receiver_id: AccountId::try_from(sender_id.clone()).unwrap(),
+=======
+                    receiver_id: sender_id.clone(),
+>>>>>>> 1b06423ebcabccd195bc01d342371c0a248434a4
                 },
             });
             claims[claim_idx].completed = true;
@@ -202,12 +200,13 @@ impl Contract {
             // If user over the forgiveness period.
             PromiseOrValue::Value(())
         } else {
-            // Within forgiveness period.
+            // Within forgiveness period. Return bond.
+            self.locked_amount -= policy.bounty_bond.0;
             Promise::new(env::predecessor_account_id())
                 .transfer(policy.bounty_bond.0)
                 .into()
         };
-        self.internal_remove_claim(id, claims, claim_idx);
+        self.internal_remove_claim(id, &env::predecessor_account_id());
         result
     }
 }
@@ -215,11 +214,10 @@ impl Contract {
 #[cfg(test)]
 mod tests {
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::{testing_env, MockedBlockchain};
+    use near_sdk::testing_env;
     use near_sdk_sim::to_yocto;
 
     use crate::proposals::{ProposalInput, ProposalKind};
-    use crate::types::BASE_TOKEN;
     use crate::{Action, Config};
 
     use super::*;
@@ -231,7 +229,7 @@ mod tests {
             kind: ProposalKind::AddBounty {
                 bounty: Bounty {
                     description: "test bounty".to_string(),
-                    token: BASE_TOKEN.parse().unwrap(),
+                    token: String::from(OLD_BASE_TOKEN),
                     amount: U128(to_yocto("10")),
                     times,
                     max_deadline: U64::from(1_000),
@@ -279,6 +277,14 @@ mod tests {
         );
 
         contract.act_proposal(1, Action::VoteApprove, None);
+        testing_env!(
+            context.build(),
+            near_sdk::VMConfig::test(),
+            near_sdk::RuntimeFeesConfig::test(),
+            Default::default(),
+            vec![PromiseResult::Successful(vec![])],
+        );
+        contract.on_proposal_callback(1);
 
         assert_eq!(contract.get_bounty_claims(accounts(1)).len(), 0);
         assert_eq!(contract.get_bounty(0).bounty.times, 1);
@@ -286,6 +292,14 @@ mod tests {
         contract.bounty_claim(0, U64::from(500));
         contract.bounty_done(0, None, "Bounty is done 2".to_string());
         contract.act_proposal(2, Action::VoteApprove, None);
+        testing_env!(
+            context.build(),
+            near_sdk::VMConfig::test(),
+            near_sdk::RuntimeFeesConfig::test(),
+            Default::default(),
+            vec![PromiseResult::Successful(vec![])],
+        );
+        contract.on_proposal_callback(2);
 
         assert_eq!(contract.get_bounty(0).bounty.times, 0);
     }

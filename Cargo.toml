@@ -5,7 +5,6 @@ members = [
   "sputnik-nft-staking",
   "sputnikdao",
   "sputnikdao2",
-  "sputnikdao-factory",
   "sputnikdao-factory2",
   "nft-staking-factory",
   "test-token",

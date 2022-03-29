@@ -1,22 +1,21 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::env::*;
 use near_sdk::json_types::Base64VecU8;
 use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::{env, AccountId, Balance, Gas};
+use near_sdk::{AccountId, Balance, Gas};
 
-/// Account ID used for $NEAR.
-pub static BASE_TOKEN: &str = "base.token";
+/// Account ID used for $NEAR in near-sdk v3.
+/// Need to keep it around for backward compatibility.
+pub const OLD_BASE_TOKEN: &str = "";
+
+/// Account ID that represents a token in near-sdk v3.
+/// Need to keep it around for backward compatibility.
+pub type OldAccountId = String;
 
 /// 1 yN to prevent access key fraud.
 pub const ONE_YOCTO_NEAR: Balance = 1;
 
 /// Gas for single ft_transfer call.
 pub const GAS_FOR_FT_TRANSFER: Gas = Gas(10_000_000_000_000);
-
-/// Gas for upgrading this contract on promise creation + deploying new contract.
-pub const GAS_FOR_UPGRADE_SELF_DEPLOY: Gas = Gas(30_000_000_000_000);
-
-pub const GAS_FOR_UPGRADE_REMOTE_DEPLOY: Gas = Gas(10_000_000_000_000);
 
 /// Configuration of the DAO.
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Debug)]
@@ -69,47 +68,16 @@ impl Action {
     }
 }
 
-/// Self upgrade, optimizes gas by not loading into memory the code.
-pub(crate) fn upgrade_self(hash: &[u8]) {
-    let current_id = env::current_account_id();
-    let method_name = "migrate".as_bytes().to_vec();
-    let attached_gas = env::prepaid_gas() - env::used_gas() - GAS_FOR_UPGRADE_SELF_DEPLOY;
-    use near_sdk::sys;
-    unsafe {
-        // Load input (wasm code) into register 0.
-        sys::storage_read(hash.len() as _, hash.as_ptr() as _, 0);
-        // schedule a Promise tx to this same contract
-        let promise_id = sys::promise_batch_create(current_id.as_bytes().len() as _, current_id.as_bytes().as_ptr() as _);
-        // 1st item in the Tx: "deploy contract" (code is taken from register 0)
-        sys::promise_batch_action_deploy_contract(promise_id, u64::MAX as _, 0);
-        // 2nd item in the Tx: call this_contract.migrate() with remaining gas
-        sys::promise_batch_action_function_call(
-            promise_id,
-            method_name.len() as _,
-            method_name.as_ptr() as _,
-            0 as _,
-            0 as _,
-            0 as _,
-            attached_gas.0,
-        );
+/// In near-sdk v3, the token was represented by a String, with no other restrictions.
+/// That being said, Sputnik used "" (empty String) as a convention to represent the $NEAR token.
+/// In near-sdk v4, the token representation was replaced by AccountId (which is in fact a wrapper
+/// over a String), with the restriction that the token must be between 2 and 64 chars.
+/// Sputnik had to adapt since "" was not allowed anymore and we chose to represent the token as a
+/// Option<AccountId> with the convention that None represents the $NEAR token.
+/// This function is required to help with the transition and keep the backward compatibility.
+pub fn convert_old_to_new_token(old_account_id: &OldAccountId) -> Option<AccountId> {
+    if old_account_id == OLD_BASE_TOKEN {
+        return None;
     }
-}
-
-pub(crate) fn upgrade_remote(receiver_id: &AccountId, method_name: &str, hash: &[u8]) {
-    use near_sdk::sys;
-    unsafe {
-        // Load input into register 0.
-        sys::storage_read(hash.len() as _, hash.as_ptr() as _, 0);
-        let promise_id = sys::promise_batch_create(receiver_id.as_bytes().len() as _, receiver_id.as_bytes().as_ptr() as _);
-        let attached_gas = env::prepaid_gas() - env::used_gas() - GAS_FOR_UPGRADE_REMOTE_DEPLOY;
-        sys::promise_batch_action_function_call(
-                promise_id,
-                method_name.len() as _,
-                method_name.as_ptr() as _,
-                u64::MAX as _,
-                0 as _,
-                0 as _,
-                attached_gas.0,
-            );
-    }
+    Some(AccountId::new_unchecked(old_account_id.clone()))
 }

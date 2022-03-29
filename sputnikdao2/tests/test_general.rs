@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
 use near_sdk::json_types::U128;
-use near_sdk::AccountId;
+use near_sdk::{env, AccountId};
 use near_sdk_sim::{call, to_yocto, view};
 
 use crate::utils::*;
 use sputnik_staking::User;
 use sputnikdao2::{
-    Action, Policy, Proposal, ProposalInput, ProposalKind, ProposalStatus, RoleKind,
-    RolePermission, VersionedPolicy, VotePolicy,
+    Action, BountyClaim, BountyOutput, Policy, Proposal, ProposalInput, ProposalKind,
+    ProposalOutput, ProposalStatus, RoleKind, RolePermission, VersionedPolicy, VotePolicy,
 };
 
 mod utils;
@@ -84,6 +84,124 @@ fn test_multi_council() {
 }
 
 #[test]
+fn test_bounty_workflow() {
+    let (root, dao) = setup_dao();
+    let user1 = root.create_user(user(1), to_yocto("1000"));
+    let user2 = root.create_user(user(2), to_yocto("1000"));
+
+    let mut proposal_id = add_bounty_proposal(&root, &dao).unwrap_json::<u64>();
+    assert_eq!(proposal_id, 0);
+    call!(
+        root,
+        dao.act_proposal(proposal_id, Action::VoteApprove, None)
+    )
+    .assert_success();
+
+    let bounty_id = view!(dao.get_last_bounty_id()).unwrap_json::<u64>() - 1;
+    assert_eq!(bounty_id, 0);
+    assert_eq!(
+        view!(dao.get_bounty(bounty_id))
+            .unwrap_json::<BountyOutput>()
+            .bounty
+            .times,
+        3
+    );
+
+    assert_eq!(to_yocto("1000"), user1.account().unwrap().amount);
+    call!(
+        user1,
+        dao.bounty_claim(bounty_id, U64::from(0)),
+        deposit = to_yocto("1")
+    )
+    .assert_success();
+    assert!(user1.account().unwrap().amount < to_yocto("999"));
+    assert_eq!(
+        view!(dao.get_bounty_claims(user1.account_id()))
+            .unwrap_json::<Vec<BountyClaim>>()
+            .len(),
+        1
+    );
+    assert_eq!(
+        view!(dao.get_bounty_number_of_claims(bounty_id)).unwrap_json::<u64>(),
+        1
+    );
+
+    call!(user1, dao.bounty_giveup(bounty_id)).assert_success();
+    assert!(user1.account().unwrap().amount > to_yocto("999"));
+    assert_eq!(
+        view!(dao.get_bounty_claims(user1.account_id()))
+            .unwrap_json::<Vec<BountyClaim>>()
+            .len(),
+        0
+    );
+    assert_eq!(
+        view!(dao.get_bounty_number_of_claims(bounty_id)).unwrap_json::<u64>(),
+        0
+    );
+
+    assert_eq!(to_yocto("1000"), user2.account().unwrap().amount);
+    call!(
+        user2,
+        dao.bounty_claim(bounty_id, U64(env::block_timestamp() + 5_000_000_000)),
+        deposit = to_yocto("1")
+    )
+    .assert_success();
+    assert!(user2.account().unwrap().amount < to_yocto("999"));
+    assert_eq!(
+        view!(dao.get_bounty_claims(user2.account_id()))
+            .unwrap_json::<Vec<BountyClaim>>()
+            .len(),
+        1
+    );
+    assert_eq!(
+        view!(dao.get_bounty_number_of_claims(bounty_id)).unwrap_json::<u64>(),
+        1
+    );
+
+    call!(
+        user2,
+        dao.bounty_done(bounty_id, None, "Bounty is done".to_string()),
+        deposit = to_yocto("1")
+    )
+    .assert_success();
+    assert!(user2.account().unwrap().amount < to_yocto("998"));
+    proposal_id = view!(dao.get_last_proposal_id()).unwrap_json::<u64>() - 1;
+    assert_eq!(proposal_id, 1);
+    assert_eq!(
+        view!(dao.get_proposal(proposal_id))
+            .unwrap_json::<ProposalOutput>()
+            .proposal
+            .kind
+            .to_policy_label(),
+        "bounty_done"
+    );
+
+    call!(
+        root,
+        dao.act_proposal(proposal_id, Action::VoteApprove, None)
+    )
+    .assert_success();
+    assert!(user2.account().unwrap().amount > to_yocto("999"));
+    assert_eq!(
+        view!(dao.get_bounty_claims(user2.account_id()))
+            .unwrap_json::<Vec<BountyClaim>>()
+            .len(),
+        0
+    );
+    assert_eq!(
+        view!(dao.get_bounty_number_of_claims(bounty_id)).unwrap_json::<u64>(),
+        0
+    );
+    assert_eq!(
+        view!(dao.get_bounty(bounty_id))
+            .unwrap_json::<BountyOutput>()
+            .bounty
+            .times,
+        2
+    );
+}
+
+#[test]
 fn test_create_dao_and_use_token() {
     let (root, dao) = setup_dao();
     let user2 = root.create_user(user(2), to_yocto("1000"));
@@ -93,7 +211,6 @@ fn test_create_dao_and_use_token() {
     
     assert!(view!(dao.get_staking_contract())
         .unwrap_json::<String>()
-        .as_str()
         .is_empty());
     add_member_proposal(&root, &dao, user2.account_id.clone()).assert_success();
     assert_eq!(view!(dao.get_last_proposal_id()).unwrap_json::<u64>(), 1);
@@ -132,8 +249,7 @@ fn test_create_dao_and_use_token() {
     .assert_success();
     vote(vec![&user3, &user2], &dao, 2);
     assert!(!view!(dao.get_staking_contract())
-        .unwrap_json::<AccountId>()
-        .as_str()
+        .unwrap_json::<String>()
         .is_empty());
     assert_eq!(
         view!(dao.get_proposal(2)).unwrap_json::<Proposal>().status,
@@ -246,12 +362,81 @@ fn test_failures() {
         1_000_000,
         Some("some".to_string()),
     ));
-    should_fail(add_transfer_proposal(
+}
+
+/// Test payments that fail
+#[test]
+fn test_payment_failures() {
+    let (root, dao) = setup_dao();
+    let user1 = root.create_user(user(1), to_yocto("1000"));
+    let whale = root.create_user(user(2), to_yocto("1000"));
+
+    // Add user1
+    add_member_proposal(&root, &dao, user1.account_id.clone()).assert_success();
+    vote(vec![&root], &dao, 0);
+
+    // Set up fungible tokens and give 5 to the dao
+    let test_token = setup_test_token(&root);
+    call!(
+        dao.user_account,
+        test_token.mint(dao.user_account.account_id.clone(), U128(5))
+    )
+    .assert_success();
+    call!(
+        user1,
+        test_token.storage_deposit(Some(user1.account_id.clone()), Some(true)),
+        deposit = to_yocto("125")
+    )
+    .assert_success();
+
+    // Attempt to transfer more than it has
+    add_transfer_proposal(
         &root,
         &dao,
-        "not:a^valid.token@".parse().unwrap(),
+        Some(test_token.account_id()),
         user(1),
-        1_000_000,
+        10,
         None,
-    ));
+    )
+    .assert_success();
+
+    // Vote in the transfer
+    vote(vec![&root, &user1], &dao, 1);
+    let mut proposal = view!(dao.get_proposal(1)).unwrap_json::<Proposal>();
+    assert_eq!(proposal.status, ProposalStatus::Failed);
+
+    // Set up benefactor whale who will donate the needed tokens
+    call!(
+        whale,
+        test_token.mint(whale.account_id.clone(), U128(6_000_000_000))
+    )
+    .assert_success();
+    call!(
+        whale,
+        test_token.ft_transfer(
+            dao.account_id(),
+            U128::from(1000),
+            Some("Heard you're in a pinch, let me help.".to_string())
+        ),
+        deposit = 1
+    )
+    .assert_success();
+
+    // Council member retries payment via an action
+    call!(
+        root,
+        dao.act_proposal(
+            1,
+            Action::Finalize,
+            Some("Sorry! We topped up our tokens. Thanks.".to_string())
+        )
+    )
+    .assert_success();
+
+    proposal = view!(dao.get_proposal(1)).unwrap_json::<Proposal>();
+    assert_eq!(
+        proposal.status,
+        ProposalStatus::Approved,
+        "Did not return to approved status."
+    );
 }
